@@ -1,0 +1,240 @@
+---
+title: "lst_elevation_low_veg_vs_forest"
+format: html
+---
+
+# Analyse LST difference between pairs of nearby low vegetation and forest pixels at different elevation gradients
+
+## 1) Prepare the data
+
+Data needed:
+
+-   landover raster
+
+-   elevation raster
+
+```{r}
+library(terra)
+library(ggplot2)
+library(dplyr)
+```
+
+```{r}
+
+# load landcover data (categorical raster)
+ldc <- rast("D:/Conservation_Biology/2025_Osa_Conservation/DATA_YN/data_major_landocvers_LST_comparison/landcover_210_pure_YN_5367_major_landcov.tif")
+# load elevation data (continuous raster)
+elv <- rast("D:/Conservation_Biology/2025_Osa_Conservation/DATA_YN/data_major_landocvers_LST_comparison/elevation_210_bilinear_5367_major_landcov.tif") 
+
+print(ldc)
+print(elv)
+```
+
+```{r}
+plot(elv)
+```
+
+```{r}
+
+# filter only classes 10 and 30 in the landcover layer (forest and low vegetation)
+# Alternatively, faster way:
+keep_vals <- c(10, 30)
+ldc_filtered <- mask(ldc, ldc %in% keep_vals, maskvalues=FALSE)
+
+plot(ldc_filtered, col = c("forestgreen","goldenrod"))
+```
+
+## 2) Find the areas that contain forest and low vegetation pairs
+
+Get a 3x3 pixels rolling window to find:
+
+-   **A)** max (30 landcover)
+
+-   **B)** min (10 landocover)
+
+-   **C)** max (elevation)
+
+-   **D)** min (elevation)
+
+```{r}
+# aggregate by factor of 3 (10 m → 30 m)
+A <- aggregate(ldc_filtered, fact = 5, fun = max, na.rm = TRUE)
+B <- aggregate(ldc_filtered, fact = 5, fun = min, na.rm = TRUE)
+# C <- aggregate(elv, fact = 5, fun = max, na.rm = TRUE)
+# D <- aggregate(elv, fact = 5, fun = min, na.rm = TRUE)
+```
+
+```{r}
+plot(A,col = c("forestgreen","goldenrod"))
+plot(B,col = c("forestgreen","goldenrod"))
+```
+
+## Raster calculator
+
+**If A + B = 40 and C - D \< 100 then 1, else 0**
+
+This intends to find all the cells where both land covers are found (10 from min and 30 from max) and where the difference in elevation is not greater than 100m. This will give us the areas where we can make comparison
+
+```{r}
+# # create mask: if A + B = 40 and D - C > 100 then 1 else 0
+# mask <- ((A + B == 40) & (C - D < 200)) * 1
+
+# create mask: if A + B = 40 and D - C > 100 then 1 else 0
+mask <- ((A + B == 40)) * 1
+
+plot(mask)
+
+#writeRaster(mask, "mask_forest_low_veg_pairs.tif", overwrite = TRUE)
+```
+
+Convert the mask pixels (pixels containing pairs) to polygons with unique ids
+
+```{r}
+#Convert each pixel to a polygon
+mask1 <- mask
+mask1[mask1 != 1] <- NA   # all other pixels become NA
+
+polygons <- as.polygons(mask1, dissolve = FALSE)
+# Optionally, assign an ID to each polygon
+polygons$ID <- 1:nrow(polygons)
+# Inspect
+polygons
+```
+
+Save them locally (optional)
+
+```{r}
+# Save as GeoJSON
+writeVector(polygons, "mask_forest_low_veg_pair.geojson", filetype = "GeoJSON", overwrite = TRUE)
+```
+
+## 3) Extract paired points
+
+To do this we will first convert all the landcover pixels which fall in the masked raster into points
+
+```{r}
+#first, convert the masked raster to the same resolution as the original landcover raster
+mask <- resample(mask, ldc_filtered, method = "near")  # nearest neighbor
+
+# then apply the mask to the landcover data. This will leave only the areas where we have pairs.
+ldc_mask <- ldc_filtered*mask
+plot(ldc_mask, col = c("white","forestgreen","goldenrod"))
+
+# turn all zeros to NULL
+ldc_mask[ldc_mask == 0] <- NA
+
+#convert all remaining pixels to points
+ldc_pts <- as.points(ldc_mask, na.rm = TRUE)
+
+#write the id of each polygon to the points
+ldc_pts$poly_id <- extract(polygons, ldc_pts)[, "ID"]
+
+# for each landcover class, leave only one point with the same id
+#Attach landcover class from the raster
+ldc_pts$landcover <- extract(ldc_mask, ldc_pts)[,2]  # 2nd column = raster values
+
+print(ldc_pts)
+
+
+```
+
+Now we will remove the duplicate points within one polygon.
+
+```{r}
+# Get only the attribute table (does not touch geometry)
+att <- values(ldc_pts)
+
+# Find duplicates by poly_id + landcover
+keep <- !duplicated(att[c("poly_id", "landcover")])
+
+# Subset the SpatVector
+pts_unique <- ldc_pts[keep, ]
+
+```
+
+```{r}
+pts_unique$elv <- extract(elv, pts_unique)[,2]
+pts_unique$uid <- seq_len(nrow(pts_unique))
+pts_unique
+```
+
+Keep only those points within 100m
+
+```{r}
+
+# Extract attribute table as data frame
+df <- as.data.frame(pts_unique)
+
+# Compute elevation range within each poly_id (pairs)
+df_filtered <- df %>%
+  group_by(poly_id) %>%
+  mutate(elv_diff = max(elv) - min(elv)) %>%
+  filter(elv_diff <= 100,
+    all(elv >= 0 & elv <= 100)||(elv >= 600 & elv <= 700)||(elv >= 1600 & elv <= 1700)) %>%
+  ungroup()
+
+# Now subset the original vector to keep only those rows
+pts_filtered <- pts_unique[df_filtered$uid, ]   # or use ID column if present
+pts_filtered
+```
+
+```{r}
+
+# # Save as shapefile
+writeVector(pts_unique, "pairs_timseries.shp",
+            filetype = "Shapefile", overwrite = TRUE)
+```
+
+```{r}
+pts_unique
+```
+
+## 4) Check their distribution accorss elevations
+
+\# Create df from attribute table (without geometry)
+
+df \<- as.data.frame(pts_unique, geom = FALSE)
+
+df
+
+```{r}
+# Extract raster values
+vals <- extract(elv, pts_unique)
+
+# attach elevation to attributes
+pts_unique$elev <- vals[, 2]
+
+pts_unique
+
+```
+
+```{r}
+df <- as.data.frame(pts_unique)
+```
+
+```{r}
+
+# If landcover is categorical, convert to factor
+df$landcover <- factor(df$landcover,
+                       levels = c(10, 30),
+                       labels = c("Forest","Low vegetation", "Urban")) 
+
+# Plot distribution of elevation across landcovers
+ggplot(df, aes(x = landcover, y = elev, fill = landcover)) +
+  geom_boxplot() +
+  labs(x = "Landcover type", y = "Elevation (m)", 
+       title = "Elevation distribution across landcover classes") +
+  theme_minimal()
+```
+
+```{r}
+library(mapview)
+library(raster)
+
+ldc_mask <- raster(ldc_mask)
+# Define categories and colors
+vals <- c(0,10,30)
+cols = c("white","forestgreen","goldenrod")
+
+mapview(ldc_mask, col.regions = cols, at = vals)
+```

@@ -1,0 +1,200 @@
+---
+title: "LST_elevation_regression"
+format: html
+---
+
+```{r}
+library(terra)
+library(ggplot2)
+library(dplyr)
+library(viridis)
+library(tidyterra)
+
+# load elevation data (continuous raster)
+lst_hot_day <- rast("D:/Conservation_Biology/2025_Osa_Conservation/DATA_YN/LST/Request_builder/LST_hot_day_06_05_2023.tiff")
+lst_hot_night <- rast("D:/Conservation_Biology/2025_Osa_Conservation/DATA_YN/LST/Request_builder/LST_hot_night_07_05_2023.tiff")
+lst_cold_day <- rast("D:/Conservation_Biology/2025_Osa_Conservation/DATA_YN/LST/Request_builder/LST_cold_day_28_08_2023.tiff")
+lst_cold_night <- rast("D:/Conservation_Biology/2025_Osa_Conservation/DATA_YN/LST/Request_builder/LST_cold_night_29_08_2023.tiff")
+
+
+```
+
+```{r}
+
+lst_stack <- c(lst_cold_day, lst_cold_night, lst_hot_day, lst_hot_night)
+lst_stack[lst_stack == 0] <- NA
+# Display facets
+ggplot() +
+  geom_spatraster(data = lst_stack) +
+  facet_wrap(~lyr, ncol = 4) +
+  scale_fill_gradientn(
+    colours = plasma(100),         # Use plasma palette
+    limits = c(28000, 33000),      # Set min/max
+    na.value = "transparent",
+    oob = scales::squish          # ensures values outside the range are capped
+  ) +
+  theme_bw()+
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1)
+  )
+
+
+```
+
+```{r}
+# load elevation data (continuous raster)
+elv <- rast("D:/Conservation_Biology/2025_Osa_Conservation/DATA_YN/elevation_30_YN.tif") 
+elv <- project(elv,lst_hot_day)
+
+# aspect <- terrain (elv, v = "aspect", unit = "degrees")
+# plot(aspect, col = rainbow(8))
+```
+
+```{r}
+elv <- resample(elv, lst_hot_day, method = "bilinear")
+# aspect <- resample(aspect, lst_hot_day, method = "bilinear")
+
+# pts <- vect("D:/Conservation_Biology/2025_Osa_Conservation/GIS_projects/Sampling_design_R/DATA/points_low_veg_forest_5367.gpkg")
+pts <- vect("data/points_low_veg_forest_5367_v2.gpkg")
+pts <- project(pts,lst_hot_day)
+
+
+# plot(c(lst_hot_day, lst_hot_night, lst_cold_day, lst_cold_night), range = c(28000,33000),col = plasma(100))
+# 
+# plot(pts, cex = 0.5)
+```
+
+```{r}
+# Extract lst values to the points
+pts$lst_cold_day <- (terra::extract(lst_cold_day, pts)[,2])/100-273.15
+pts$lst_cold_night <- (terra::extract(lst_cold_night, pts)[,2])/100-273.15
+pts$lst_hot_day <- (terra::extract(lst_hot_day, pts)[,2])/100-273.15
+pts$lst_hot_night <- (terra::extract(lst_hot_night, pts)[,2])/100-273.15
+
+pts$elv <- terra::extract(elv, pts)[,2]
+
+# pts$aspect <- extract(aspect, pts)[,2]
+head(pts)
+```
+
+```{r}
+# convert our spatial points to a dataframe in order to plot the results
+df <- as.data.frame(pts)
+
+
+df$landcover <- factor(df$landcover,
+                       levels = c(10, 30),
+                       labels = c ("Forest", "Low vegetation"))
+```
+
+```{r}
+plotLST <- function(df, y_name, title, subtitle){
+  ggplot(df, aes(x = elv, y = df[[y_name]], colour = landcover)) +
+  geom_point(size = 1, alpha = 0.8) +
+  # geom_smooth(method = "lm") +
+  # geom_smooth(method = "loess") +
+  # geom_smooth(method = "gam") +
+  geom_smooth(method = "lm", formula = y ~ poly(x, 2)) +
+  scale_colour_manual(
+    values = c("Forest" = "darkgreen", "Low vegetation" = "sienna2")) +
+  labs(
+    x = "Elevation (m)",   # x-axis label
+    y = "Land Surface Temperature (C)",                   # y-axis label
+    colour = "Landcover Type",             # legend title
+    title = title,   # plot title
+    subtitle = subtitle,
+  )+ 
+  theme_bw()+
+  theme(legend.title = element_blank())
+}
+```
+
+```{r}
+gg_hot_day <- plotLST(df, 
+  'lst_hot_day', 
+  'Daytime LST for the hottest day 2023', 
+  '(06.05.2023)')
+
+gg_hot_night <- plotLST(df, 
+  'lst_hot_night', 
+  'Nightime LST for the hottest day 2023', 
+  '(07.05.2023)')
+
+gg_cold_day <- plotLST( df, 
+  'lst_cold_day', 
+  'Daytime LST for the coldest day 2023', 
+  '(28.08.2023)')
+
+gg_cold_night <- plotLST( df, 
+  'lst_cold_night', 
+  'Nightime LST for the coldest day 2023', 
+  '(29.08.2023)')
+
+gg_hot_day
+gg_hot_night
+gg_cold_night
+gg_cold_day
+```
+
+```{r}
+
+# plot the data
+# gg_cold <- ggplot(df, aes(x = elv, y = lst_cold, colour = landcover)) +
+#   geom_point(size = 1) +
+#   geom_smooth(formula = y ~ x, method = "lm") +
+#   scale_colour_manual(
+#     values = c("Forest" = "darkgreen", "Low vegetation" = "sienna2")) +
+#   labs(
+#     x = "Elevation (m)",   # x-axis label
+#     y = "Land Surface Temperature (K)",                   # y-axis label
+#     colour = "Landcover Type",                # y-axis label
+#     colour = "Landcover Type",             # legend title
+#     title = "Coldest day 2023",   # plot title
+#     subtitle = "(28.08.2023)",
+#   )
+# gg_cold
+
+
+
+# ##################################################################
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+
+# Convert wide to long
+df_long <- df %>%
+  pivot_longer(
+    cols = c(lst_hot_day, lst_hot_night, lst_cold_day, lst_cold_night),
+    names_to = "time_type",
+    values_to = "lst"
+  ) 
+
+
+```
+
+```{r}
+facets <- ggplot(df_long, aes(x = elv, y = lst, colour = landcover)) +
+  geom_point(size = 0.5, alpha = 0.8) +
+  geom_smooth(method = "lm") +
+  # geom_smooth(method = "loess") +
+  # geom_smooth(method = "gam") +
+  # geom_smooth(method = "lm", formula = y ~ poly(x, 2)) +
+  scale_colour_manual(
+    values = c("Forest" = "darkgreen", "Low vegetation" = "sienna2")
+  ) +
+  labs(
+    x = "Elevation (m)",
+    y = "Land Surface Temperature (C)",
+    colour = "Landcover Type",
+    title = 'geom_smooth(method = "lm"))'
+  ) +
+  facet_wrap(~ time_type, ncol = 4) +  # 2 columns layout
+  theme_bw()+
+  theme(legend.title = element_blank())
+
+facets
+```
+
+```{r}
+ggsave("facets3.png", plot = facets, width = 25, height = 8, units = "cm", dpi = 300)
+```
