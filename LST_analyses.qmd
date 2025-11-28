@@ -1,0 +1,53 @@
+---
+title: "Untitled"
+format: html
+---
+
+```{r}
+library(terra)
+library(ggplot2)
+library(dplyr)
+```
+
+```{r}
+
+# load elevation data (continuous raster)
+elv <- rast("D:/Conservation_Biology/2025_Osa_Conservation/DATA_YN/elevation_30_YN.tif") 
+# load elevation data (continuous raster)
+lst <- rast("D:/Conservation_Biology/2025_Osa_Conservation/DATA_YN/LST/LST-DISPLAY-DAY-TIME_2023-03-03.tiff")
+
+pts <- vect("D:/Conservation_Biology/2025_Osa_Conservation/GIS_projects/Sampling_design_R/points_low_veg_forest_5367.gpkg")
+
+```
+
+```{r}
+print(pts)
+print(elv)
+print(lst)
+```
+
+Make sure that the CRS of the layers match
+
+```{r}
+lst <- project(lst,"EPSG:5367")
+elv <- project(elv,"EPSG:5367")
+print(lst)
+print(elv)
+```
+
+Match also the resolution and extent of the two rasters
+
+```{r}
+elv <- resample(elv, lst, method="bilinear") 
+writeRaster(elv,"elv.tif")
+```
+
+```{r}
+writeRaster(lst,"lst.tif")
+```
+
+Extract lst and elevation values in the pts
+
+```{r}
+names(lst)
+```

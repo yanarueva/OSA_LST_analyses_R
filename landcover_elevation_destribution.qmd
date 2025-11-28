@@ -1,0 +1,72 @@
+```{r}
+library(terra)
+library(ggplot2)
+library(dplyr)
+```
+
+```{r}
+landcover <- rast("D:/Conservation_Biology/2025_Osa_Conservation/DATA_YN/data_major_landocvers_LST_comparison/landcover_210_pure_YN_5367_major_landcov.tif")   # categorical raster
+elevation <- rast("D:/Conservation_Biology/2025_Osa_Conservation/DATA_YN/data_major_landocvers_LST_comparison/elevation_210_bilinear_5367_major_landcov.tif")   # continuous raster
+```
+
+```{r}
+# Stack the rasters
+stacked <- c(landcover, elevation)
+
+# Convert to a dataframe (sample if raster is very large)
+df <- as.data.frame(stacked, xy = FALSE, na.rm = TRUE)
+
+# Rename columns for clarity
+names(df) <- c("landcover", "elevation")
+
+df <- subset(df, landcover %in% c(10, 11, 13, 30, 50))
+
+# If landcover is categorical, convert to factor
+df$landcover <- factor(df$landcover,
+                       levels = c(10, 11, 13, 30, 50),
+                       labels = c("Forest","Palm plantation","Pineapple","Low vegetation", "Urban")) 
+
+# Plot distribution of elevation across landcovers
+ggplot(df, aes(x = landcover, y = elevation, fill = landcover)) +
+  geom_boxplot() +
+  labs(x = "Landcover type", y = "Elevation (m)", 
+       title = "Elevation distribution across landcover classes") +
+  theme_minimal()
+
+```
+
+```{r}
+# Create elevation bins (every 200 m up to 2000 m)
+custom_color_map <- c(
+  "Urban" = "#f62024",
+  "Forest" = "#009E10",
+  "Palm plantation" = "#9a125b",
+  "Low vegetation" = "#D6692F",
+  "Pineapple" = "#E05DD7"
+)
+
+df$elev_bin <- cut(df$elevation, breaks = seq(0, 1000, by = 100))
+
+df <- df %>% 
+  filter(!is.na(elev_bin))    # drop rows with NA bin
+
+
+# Count per landcover × elevation bin
+counts <- df %>%
+  group_by(landcover, elev_bin) %>%
+  summarise(n = n(), .groups = "drop")
+
+# Faceted barplot (subplots per landcover)
+p <- ggplot(counts, aes(x = elev_bin, y = n, fill = landcover)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~ landcover, scales = "free_y", nrow = 1) +   # one subplot per landcover
+  scale_fill_manual(values = custom_color_map) +   # apply custom colors
+  labs(x = "Elevation bin (m)", y = "Number of pixels") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        legend.position = "none")   # legend not needed since we facet
+```
+
+```{r}
+ggsave("elev_distr1.png", plot = p, width = 23, height = 6, units = "cm", dpi = 300)
+```
