@@ -1,0 +1,144 @@
+---
+title: "pairs_timeseries"
+format: html
+---
+
+source("functions.R")
+
+source("functions.R")
+
+```{r}
+library(dplyr)
+library(ggplot2)
+source("functions.R")
+```
+
+```{r}
+csv1 <- read.csv("data/1bbox_LST.csv")
+csv2 <- read.csv("data/2bbox_LST.csv")
+
+csv3 <- read.csv("data/3bbox_LST.csv")
+csv4 <- read.csv("data/4bbox_LST.csv")
+
+csv5 <- read.csv("data/5bbox_LST.csv")
+csv6 <- read.csv("data/6bbox_LST.csv")
+
+```
+
+```{r}
+# Pair 1
+bb1 <- clean_LST_data( csv1, landcov_value = 10)
+bb2 <- clean_LST_data( csv2, landcov_value = 30)
+
+# Pair 2
+bb3 <- clean_LST_data( csv3, landcov_value = 10)
+bb4 <- clean_LST_data( csv4, landcov_value = 30)
+
+# Pair 3
+bb5 <- clean_LST_data( csv5, landcov_value = 10)
+bb6 <- clean_LST_data( csv6, landcov_value = 30)
+
+
+high_bb <- lst_bind(bb1, bb2)
+mid_bb <- lst_bind(bb3, bb4)
+low_bb <- lst_bind(bb5, bb6)
+
+
+# head(high_bb)
+```
+
+```{r}
+source("functions.R")
+
+plotLST(high_bb, "1600-1700")
+plotLST(mid_bb, "800-900")
+plotLST(low_bb, "0-100")
+```
+
+```{r}
+library(dplyr)
+library(lubridate)
+```
+
+```{r}
+head(mid_bb)
+```
+
+```{r}
+library(dplyr)
+library(lubridate)
+
+df_monthly <- mid_bb %>%
+  mutate(
+    year  = year(date),
+    month = month(date)
+  ) %>%
+  group_by(landcov,year, month) %>%
+  summarise(
+    LST_monthly_mean = mean(LST_C, na.rm = TRUE),
+    n_points = n(),    # optional (how many records per month)
+    .groups = "drop"
+  ) %>%
+  # optional: create a proper first-of-month date
+  mutate(month_date = as.Date(sprintf("%04d-%02d-01", year, month)))
+
+head(df_monthly)
+plot(df_monthly$month_date, df_monthly$LST_monthly_mean, type = "l")
+```
+
+```{r}
+monthly_ref_means <- mid_bb %>%
+  # restrict to Oct 2020 → Oct 2022
+  filter(date >= as.Date("2020-10-01"),
+         date <= as.Date("2022-10-31")) %>%
+  
+  # extract month number
+  mutate(month = month(date)) %>%
+  
+  # compute the mean for each month (across all years in the window)
+  group_by(landcov, month) %>%
+  summarise(
+    ref_mean = mean(LST_C, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+monthly_ref_means
+plot(monthly_ref_means$month,monthly_ref_means$ref_mean, type = "l")
+```
+
+```{r}
+
+df_monthly_anom <- df_monthly %>%
+  left_join(monthly_ref_means, by = c("landcov", "month")) %>%
+  mutate(
+    anomaly = LST_monthly_mean - ref_mean
+  )
+df_monthly_anom
+plot(df_monthly_anom$month_date, df_monthly_anom$anomaly, type = "l")
+```
+
+```{r}
+
+plotAnom <- function (df, elev_range)  {
+  ggplot(df, aes(x = month_date, y = anomaly, color = landcov)) +
+    annotate("rect", xmin = as.Date("2023-11-01"), xmax = as.Date("2024-04-01"), ymin = -Inf, ymax = Inf, alpha = .2)+
+    annotate("text", x = as.Date("2023-10-01"), y = 8, label = "El Niño")+
+    # geom_point(alpha = 0.4) +            # optional: show the raw points
+    geom_line(size = 1) +
+    geom_hline(yintercept = 0, color = "#4e4f52", linetype = "dashed", linewidth = 0.8)+
+    scale_y_continuous(limits = c(-3, 8), breaks = seq(-2, 8, by = 2))+
+    scale_colour_manual(
+      values = c("darkgreen", "sienna2")
+    )+
+    # scale_x_date(date_breaks = "2 months",  date_labels = "%Y %b")+
+    labs(x = element_blank(), y = "LST anomaly (°C)", title = paste("Forest and low vegetation comparison pair at",elev_range, "m")) +
+    theme_bw()+
+    theme(legend.position = "right",                  # keep it outside on the right
+          axis.text.x = element_text(angle = 45, hjust = 1),
+          legend.justification = c("left", "top"),    # align legend box to its top edge)
+          legend.key = element_rect(fill = "white"), # white key boxes
+          legend.title = element_blank())   
+}
+
+plotAnom(df_monthly_anom,"800-900m")
+```
