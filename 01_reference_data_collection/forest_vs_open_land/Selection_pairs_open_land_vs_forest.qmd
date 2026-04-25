@@ -1,0 +1,622 @@
+---
+?---
+title: "lst_elevation_low_veg_vs_forest"
+format: html
+---
+
+# Analyse LST difference between pairs of nearby low vegetation and forest pixels at different elevation gradients
+
+## 1) Prepare the data
+
+Data needed:
+
+-   landover raster
+
+-   elevation raster
+
+```{r}
+library(terra)
+library(ggplot2)
+library(dplyr)
+```
+
+# Prepossessing of input data
+
+## CRS projectoins
+
+Reproject the data to the same projection. For Costa Rica, we have chosen EPSG: 32EPSG:32617EPSG:32617EPSG:3261761
+
+```{r}
+
+# load landcover data (categorical raster)
+ldc <- rast("D:/2023_OSA_Conservation_LULC_internship/DATA_final_results - zenodo/8_Amistosa/8_Amostosa_landcover_YN.tif")
+ldc <- project(ldc, "EPSG:32617")
+writeRaster(
+  ldc, 
+  "D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/landcover_32617.tif", 
+  overwrite=TRUE)
+
+# load elevation data (continuous raster)
+
+elv <- rast("D:/2025_Osa_Conservation/DATA_YN/elevation_30_YN.tif") 
+elv <- project(elv, "EPSG:32617")
+writeRaster(
+  elv, 
+  "D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/elevation_30_32617.tif", 
+  overwrite=TRUE)
+
+# water extent
+mwe <- rast("D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/extent_90W_10Nv1_4_2021.tif")
+
+mwe <- project(mwe, "EPSG:32617")
+# We will crop the mwe dataset, to save memory, since it is too big
+mwe_crop <- crop(x = mwe, y = aoi)
+writeRaster(
+  mwe_crop, 
+  "D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/water_extent_30_32617.tif", 
+  overwrite=TRUE)
+# mwe <- crop(x = mwe, y = aoi)
+# crs(ldc)
+# crs(elv)
+# crs(ch)
+# crs(mwe)
+
+# Load open street map rivers
+rivers <- vect("D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/hotosm_cri_waterways_lines_shp/hotosm_cri_waterways_lines_shp.shp")
+rivers <- project(rivers, "EPSG:32617")
+
+# crop to aoi extent
+rivers_crop <- crop(x = rivers, y = aoi)
+rivers_crop 
+crs(rivers_crop)
+
+# save the projected vector
+writeVector(
+  rivers_crop,
+  "D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/rivers_osm_32617.shp"
+)
+```
+
+## 
+
+```{r}
+# area of interest (aoi)
+aoi <- vect("D:/2025_Osa_Conservation/DATA/Amistosa_climate_hub_32617.shp")
+
+ldc <- rast("D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/landcover_10_2023_32617.tif")
+
+elv <- rast("D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/elevation_30_32617.tif")
+
+# load carbon height (Planet product 30m)
+ch <- rast("D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/canopy_height_30_2023_32617.tif") 
+ch <- crop(x = ch, y = aoi)
+
+# maximum water extent
+mwe <- rast("D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/water_extent_30_32617.tif")
+
+# open street map rivers
+rivers <- vect("D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/rivers_osm_32617.shp")
+```
+
+```{r}
+plot(elv, col = (terra.pal=terrain.colors(10)), range=c(1,3000))
+plot(ldc)
+plot(ch,range=c(0,30))
+plot(mwe,col=c("light gray", "blue"))
+plot(rivers,col="blue")
+plot(aoi, add = TRUE)
+```
+
+```{r}
+
+res(ldc)
+res(elv)
+res(ch)
+res(mwe)
+```
+
+## Reclassify canopy height to forest and non-forest
+
+```{r}
+# Reclassify values into categories --> everything from 0-3 m is open land, and everything above 15 meters is forest
+rc <- matrix(c(
+  -0.5, 2, 30,
+  14.9, 40, 10
+), ncol=3, byrow=TRUE)
+
+ch_cat <- classify(ch, rc, others=NA)
+plot(ch_cat,col = c("forestgreen","goldenrod"))
+```
+
+## Create a mask from landcover and water
+
+Remove the following classes:
+
+-   palm oil
+
+-   pineapple
+
+-   urban
+
+-   mangroves
+
+-   water
+
+```{r}
+# filter only classes 10 and 30 in the landcover layer (forest and low vegetation)
+# Alternatively, faster way:
+ldc_mask <- ifel(ldc %in% c(10, 30, 110), 1, NA)
+water_mask <- ifel(mwe>0,NA,1)
+
+# Resample the mask layers to have the same resolution as the canopy heigh layer.
+ldc_mask_30 <- resample(ldc_mask, ch, min)
+water_mask_30 <- resample(water_mask, ch, min)
+
+# plot(water_mask, col = "dark grey")
+plot(water_mask_30, col = "dark grey")
+
+plot(ldc_mask_30, col = "dark grey")
+plot(water_mask_30*ldc_mask_30, col = "dark grey")
+```
+
+Apply the mask to the forest non-forest raster
+
+```{r}
+ldc_pairs <- ch_cat*water_mask_30*ldc_mask_30
+plot(ldc_pairs, col = c("forestgreen","goldenrod"))
+
+# writeRaster(
+#  ldc_pairs, 
+#   "D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/ldc_pairs.tif", 
+#   overwrite=TRUE)
+```
+
+## Option 1: Aggregate cells to 210m and check for pure pixels
+
+Here we check whether at least 90% of the 30m pixels are of a single class.
+
+```{r}
+# function to calculate the mode and how often the mode has occured
+mode_with_count <- function(x) {
+  x <- x[!is.na(x)]
+  if (length(x) == 0) return(c(NA, NA))
+
+  tab <- table(x)
+  m <- tab[which.max(tab)]
+
+  c(mode = as.numeric(names(m)), count = as.numeric(m))
+}
+
+# aggregate to 210m pixel resolution --> two bands, one with the mode, one wiht the majority count
+r_agg <- aggregate(
+  ldc_pairs,
+  fact = 7,
+  fun = mode_with_count
+)
+
+plot(r_agg)
+# ---------------------------------------
+# show the areas where there have been at least 19 cells (out of 21) with the mode
+r19 <- ifel(r_agg[[2]] >= 47, 1, NA)
+
+plot(r19)
+# ------------------------------
+# make sure not a single water pixel falls in the aggregated cells
+water_mask_210 <- resample(water_mask_30, r19, min)
+r19<- r19*water_mask_210
+plot(r19)
+# ------------------------------
+ldc_pure <- r19*r_agg[[1]]
+plot(ldc_pure, col = c("forestgreen","goldenrod"))
+# plot(ldc_210, col = c("grey", "forestgreen","goldenrod"))
+writeRaster(
+ ldc_pure,
+  "D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/ldc_pure5.tif",
+  overwrite=TRUE)
+```
+
+Another approach to check whether 100% of 30m pixels in a 210m pixel are a single class, by checking if the minimum and maximum from the aggregate fucntion are the same.
+
+```{r}
+ldc_min <- aggregate(
+  ldc_pairs,
+  fact = 7,
+  fun = min
+)
+
+ldc_max <- aggregate(
+  ldc_pairs,
+  fact = 7,
+  fun = max
+)
+
+plot(ldc_pairs,col = c("forestgreen","goldenrod"))
+plot(ldc_min,col = c("forestgreen","goldenrod"))
+plot(ldc_max,col = c("forestgreen","goldenrod"))
+
+ldc_pure <- ifel((ldc_max-ldc_min)==0, ldc_max, NA)
+plot(ldc_pure,col = c("forestgreen","goldenrod"))
+
+writeRaster(
+ ldc_pure,
+  "D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/ldc_pure4.tif",
+  overwrite=TRUE)
+```
+
+## Option 2: Use rolling window
+
+```{r}
+# The matrix representing the search window
+w <- matrix(1, 7, 7)
+
+# function to calculate the mode and how often the mode has occured
+mode_with_count <- function(x) {
+  x <- x[!is.na(x)]
+  if (length(x) == 0) return(c(NA, NA))
+
+  tab <- table(x)
+  m <- tab[which.max(tab)]
+
+  c(mode = as.numeric(names(m)), count = as.numeric(m))
+}
+
+pure_check <- focal(ldc_pairs, w = w, fun = mode_with_count)
+
+plot(pure_check[[2]])
+```
+
+```{r}
+# Check if mode occurence is above 48 (97%)
+r97 <- ifel(pure_check[[2]] >= 48, 1, NA)
+
+plot(r97)
+# ------------------------------
+# make sure not a single water pixel falls in the aggregated cells
+r97<- r97*water_mask_30
+plot(r97)
+# ------------------------------
+ldc_pure <- r97*pure_check[[1]]
+plot(ldc_pure, col = c("forestgreen","goldenrod"))
+# plot(ldc_210, col = c("grey", "forestgreen","goldenrod"))
+writeRaster(
+ ldc_pure,
+  "D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/ldc_pure6.tif",
+  overwrite=TRUE)
+```
+
+## Add elevation variables (elevation and slope)
+
+Data should be considered unreliable over sloped terrain that is over 20 degrees. 
+
+```{r}
+
+# First resample elevatioon to 30 m ldc_pure layer
+elv_30 <- crop(elv, ext(ldc_pure))
+elv_30 <- resample(elv, ldc_pure, mean)
+
+
+# Calculate the slope
+slope <- terrain(elv_30, v = "slope", unit = "degrees")
+
+
+# The matrix representing the search window
+w <- matrix(1, 7, 7)
+
+# # Calculte only the mode occurences
+# mode_count <- function(x) {
+#   x <- x[!is.na(x)]
+#   if(length(x) == 0) return(NA)
+# 
+#   tab <- table(x)
+#   max(tab)
+# }
+# function to calculate the mode and how often the mode has occured
+slope_mean <- focal(slope, w = w, fun = mean)
+
+
+
+# mask out areas over 20 degrees of slope
+slope_check <- ifel(slope_mean >= 20, NA, 1)
+
+plot(slope)
+plot(slope_mean)
+plot(slope_check, col = "dark grey")
+
+
+# Apply the slope check to the ldc_pure raster
+ldc_slope <- ldc_pure*slope_check
+plot(ldc_slope, col = c("forestgreen","goldenrod"))
+# 
+writeRaster(
+ ldc_slope,
+  "D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/ldc_pure7.tif",
+  overwrite=TRUE)
+
+# crs(elv_30)
+# crs(ldc_pure)
+# 
+# ext(elv_30)
+# ext(ldc_pure)
+# 
+# res(elv_30)
+# res(ldc_pure)
+# 
+# # Check coordinate reference system (CRS)
+# crs(ldc_pure)
+# crs(slope_check)
+# 
+# # Check extent
+# ext(ldc_pure)
+# ext(slope_check)
+# 
+# # Check resolution
+# res(ldc_pure)
+# res(slope_check)
+
+```
+
+## 2) Find the areas that contain forest and low vegetation pairs
+
+Get a 4x4 pixels rolling window to find:
+
+-   **A)** max (30 landcover)
+
+-   **B)** min (10 landocover)
+
+```{r}
+# aggregate by factor of 4 (210 m → 840 m)
+A <- aggregate(ldc_filtered, fact = 4, fun = max, na.rm = TRUE)
+B <- aggregate(ldc_filtered, fact = 4, fun = min, na.rm = TRUE)
+# C <- aggregate(elv, fact = 5, fun = max, na.rm = TRUE)
+# D <- aggregate(elv, fact = 5, fun = min, na.rm = TRUE)
+```
+
+```{r}
+plot(A,col = c("forestgreen","goldenrod"))
+plot(B,col = c("forestgreen","goldenrod"))
+```
+
+## Raster calculator
+
+**If A + B = 40 then 1, else 0**
+
+This intends to find all the agregated cells (4x4) where both land covers are found (10 from min and 30 from max). This will give us the areas where we can make comparison
+
+```{r}
+# # create mask: if A + B = 40 and D - C > 100 then 1 else 0
+# mask <- ((A + B == 40) & (C - D < 200)) * 1
+
+# create mask: if A + B = 40 and D - C > 100 then 1 else 0
+mask <- ((A + B == 40)) * 1
+
+plot(mask)
+
+#writeRaster(mask, "mask_forest_low_veg_pairs.tif", overwrite = TRUE)
+```
+
+Convert the mask pixels (pixels containing pairs) to polygons with unique ids
+
+```{r}
+#Convert each pixel to a polygon
+mask1 <- mask
+mask1[mask1 != 1] <- NA   # all other pixels become NA
+
+polygons <- as.polygons(mask1, dissolve = FALSE)
+# Optionally, assign an ID to each polygon
+polygons$ID <- 1:nrow(polygons)
+# Inspect
+polygons
+```
+
+Save them locally (optional)
+
+```{r}
+# Save as GeoJSON
+writeVector(polygons, "mask_forest_low_veg_pair.geojson", filetype = "GeoJSON", overwrite = TRUE)
+```
+
+## 3) Extract paired points
+
+To do this we will first convert all the landcover pixels which fall in the masked raster into points
+
+```{r}
+#first, convert the masked raster to the same resolution as the original landcover raster
+mask <- resample(mask, ldc_filtered, method = "near")  # nearest neighbor
+
+# then apply the mask to the landcover data. This will leave only the areas where we have pairs.
+ldc_mask <- ldc_filtered*mask
+plot(ldc_mask, col = c("white","forestgreen","goldenrod"))
+
+# turn all zeros to NULL
+ldc_mask[ldc_mask == 0] <- NA
+
+#convert all remaining pixels to points
+ldc_pts <- as.points(ldc_mask, na.rm = TRUE)
+
+#write the id of each polygon to the points
+ldc_pts$poly_id <- extract(polygons, ldc_pts)[, "ID"]
+
+#Attach landcover class from the raster
+ldc_pts$landcover <- extract(ldc_mask, ldc_pts)[,2]  # 2nd column = raster values
+
+print(ldc_pts)
+
+
+```
+
+Add attributes of elevation and UID
+
+```{r}
+
+ldc_pts$elv <- extract(elv, ldc_pts)[,2]
+ldc_pts$uid <- seq_len(nrow(ldc_pts)) 
+ldc_pts
+nrow(ldc_pts)
+```
+
+Now we will filter only those elevation categories for which we intend to do our LST analyses
+
+```{r}
+
+# Extract attribute table as data frame
+df <- as.data.frame(ldc_pts)
+
+# Leave only those points at the chosen elevation category
+df_filtered <- df %>%
+  filter( 
+    (elv >= 0 & elv <= 100) |
+    (elv >= 600 & elv <= 700) |
+    (elv >= 1300 & elv <= 1500)
+  )
+  
+# Now subset the original vector to keep only those rows
+pts_filtered <- ldc_pts[df_filtered$uid, ]   # or use ID column if present
+pts_filtered
+```
+
+Now we will remove the duplicate points within one polygon.
+
+```{r}
+# Get only the attribute table (does not touch geometry)
+att <- values(pts_filtered)
+
+# Find duplicates by poly_id + landcover
+keep <- !duplicated(att[c("poly_id", "landcover")])
+
+# Subset the SpatVector
+pts_unique <- pts_filtered[keep, ]
+pts_unique
+
+```
+
+And remove any single points, where there is not a pair anymore
+
+```{r}
+# Get only the attribute table (does not touch geometry)
+att_u <- values(pts_unique)
+
+# Count how many points per poly_id
+poly_counts <- table(att_u$poly_id)
+
+# Keep only poly_ids with more than one point
+keep_ids <- names(poly_counts[poly_counts > 1]) 
+
+# Subset the SpatVector
+pts_unique <- pts_unique[att_u$poly_id %in% keep_ids, ]
+
+pts_unique
+```
+
+## 4) Get 10 pairs of spatially balanced points for each elevation
+
+With the code above we have obtained:
+
+-   218 pairs at low elevation (0-100m)
+
+-   28 pairs at medium elevation (600-700m)
+
+-   20 pairs at high elevation (1300-1500)
+
+Now we want to extract 10 pairs of spatially balanced samples for each elevation class
+
+**4.1) Divide the data in our three categories**
+
+We will extract the polygons we defined in step 2, which contain our pairs. Then we will select 10 polygons based on the spatially balanced method (grts) for each elev category. After that we will select only those points from points_unique that have the same poly_id as our spatially balanced polygons.
+
+```{r}
+
+# Extract attributes
+att <- values(pts_unique)
+
+# Devide the points data in their elevation category. 
+pts_low  <- pts_unique[att$elv <= 100, ]
+pts_mid  <- pts_unique[att$elv >= 600 & att$elv <= 700, ]
+pts_high <- pts_unique[att$elv >= 1300, ]
+
+print(nrow(pts_low)/2)
+print(nrow(pts_mid)/2)
+print(nrow(pts_high)/2)
+
+# Function to extract polygons matching point poly_ids
+get_polys_for_points <- function(pts, polys, pts_id = "poly_id", poly_id = "ID") {
+  # Extract unique IDs from points
+  ids <- unique(values(pts)[[pts_id]])
+  # Subset polygons using their ID field
+  polys_subset <- polys[values(polys)[[poly_id]] %in% ids, ]
+  return(polys_subset)
+}
+
+# Get the polygons which have those points
+# In addition we take the centers as points and convert them from spat vector to sf object. This extra steps make it easier when working with the grts function in spsurvey later
+polys_low_sf <- st_as_sf(centroids(get_polys_for_points(pts_low, polygons)))
+polys_mid_sf <- st_as_sf(centroids(get_polys_for_points(pts_mid, polygons)))
+polys_high_sf <- st_as_sf(centroids(get_polys_for_points(pts_high, polygons)))
+
+print(nrow(polys_low_sf))
+print(nrow(polys_mid_sf))
+print(nrow(polys_high_sf))
+
+
+```
+
+**4.2) Get spatially balanced samples**
+
+```{r}
+library(spsurvey)
+set.seed(51)
+```
+
+```{r}
+# Now we will extract the spatially balanced data with the grts function from spsurvey for each elevation class
+
+# # TEST
+# poly_high_grts <- (grts(polys_high_sf, n_base = 10))
+# plot(poly_high_grts, polys_high_sf, key.width = lcm(3))
+
+# We add $sites_base to convert the result in sf object
+# Apply to all the point datasets
+poly_low_grts <- (grts(polys_low_sf, n_base = 10))$sites_base
+poly_mid_grts <- (grts(polys_mid_sf, n_base = 10))$sites_base
+poly_high_grts <- (grts(polys_high_sf, n_base = 10))$sites_base
+
+
+
+```
+
+Extract the ids of the spatially balanced polygons
+
+```{r}
+ids_low_grts <- poly_low_grts$ID
+ids_mid_grts <- poly_mid_grts$ID
+ids_high_grts <- poly_high_grts$ID
+
+# print(length(unique(ids_low_grts)))
+# print(length(unique(ids_mid_grts)))
+# print(length(unique(ids_high_grts)))
+```
+
+```{r}
+pts_low_grts <- pts_low[values(pts_low)$poly_id %in%ids_low_grts, ]
+pts_mid_grts <- pts_mid[values(pts_mid)$poly_id %in%ids_mid_grts, ]
+pts_high_grts <- pts_high[values(pts_high)$poly_id %in%ids_high_grts, ]
+
+```
+
+## 5) Export the data
+
+```{r}
+
+# # all pairs generated
+# writeVector(pts_unique, "DATA/pairs_timseries_v260123_1432.shp",
+#             filetype = "ESRI Shapefile", overwrite = TRUE)
+
+# spatially balanced 10 pairs for each elevation category
+writeVector(pts_low_grts, "DATA/pairs_timseries_low_10.shp",
+            filetype = "ESRI Shapefile", overwrite = TRUE)
+
+writeVector(pts_mid_grts, "DATA/pairs_timseries_mid_10.shp",
+            filetype = "ESRI Shapefile", overwrite = TRUE)
+
+writeVector(pts_high_grts, "DATA/pairs_timseries_high_10.shp",
+            filetype = "ESRI Shapefile", overwrite = TRUE)
+```

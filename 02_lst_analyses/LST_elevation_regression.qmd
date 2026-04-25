@@ -11,10 +11,10 @@ library(viridis)
 library(tidyterra)
 
 # load elevation data (continuous raster)
-lst_hot_day <- rast("D:/Conservation_Biology/2025_Osa_Conservation/DATA_YN/LST/Request_builder/LST_hot_day_06_05_2023.tiff")
-lst_hot_night <- rast("D:/Conservation_Biology/2025_Osa_Conservation/DATA_YN/LST/Request_builder/LST_hot_night_07_05_2023.tiff")
-lst_cold_day <- rast("D:/Conservation_Biology/2025_Osa_Conservation/DATA_YN/LST/Request_builder/LST_cold_day_28_08_2023.tiff")
-lst_cold_night <- rast("D:/Conservation_Biology/2025_Osa_Conservation/DATA_YN/LST/Request_builder/LST_cold_night_29_08_2023.tiff")
+lst_hot_day <- rast("D:/2025_Osa_Conservation/DATA_YN/LST/Request_builder/LST_hot_day_06_05_2023.tiff")
+lst_hot_night <- rast("D:/2025_Osa_Conservation/DATA_YN/LST/Request_builder/LST_hot_night_07_05_2023.tiff")
+lst_cold_day <- rast("D:/2025_Osa_Conservation/DATA_YN/LST/Request_builder/LST_cold_day_28_08_2023.tiff")
+lst_cold_night <- rast("D:/2025_Osa_Conservation/DATA_YN/LST/Request_builder/LST_cold_night_29_08_2023.tiff")
 
 
 ```
@@ -43,7 +43,7 @@ ggplot() +
 
 ```{r}
 # load elevation data (continuous raster)
-elv <- rast("D:/Conservation_Biology/2025_Osa_Conservation/DATA_YN/elevation_30_YN.tif") 
+elv <- rast("D:/2025_Osa_Conservation/DATA_YN/elevation_30_YN.tif") 
 elv <- project(elv,lst_hot_day)
 
 # aspect <- terrain (elv, v = "aspect", unit = "degrees")
@@ -55,7 +55,7 @@ elv <- resample(elv, lst_hot_day, method = "bilinear")
 # aspect <- resample(aspect, lst_hot_day, method = "bilinear")
 
 # pts <- vect("D:/Conservation_Biology/2025_Osa_Conservation/GIS_projects/Sampling_design_R/DATA/points_low_veg_forest_5367.gpkg")
-pts <- vect("data/points_low_veg_forest_5367_v2.gpkg")
+pts <- vect("D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/points_low_veg_forest_5367_v2.gpkg")
 pts <- project(pts,lst_hot_day)
 
 
