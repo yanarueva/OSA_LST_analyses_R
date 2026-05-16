@@ -43,43 +43,70 @@ clean_lst_data <- function(df) {
       lst = lst - 273.15,
       landcover = factor(landcover, labels = c("forest", "open_land"))
     ) |>
-    select(c(date, doy, poly_id, landcover, lst, elv, uid, check)) |>
+    select(c(date, doy, poly_id, landcover, lst, elv)) |>
     filter(date >= as.Date("2020-10-01")) 
 }
 
 
 # -----------------------------------------------------------------
-plot_monthly<- function (df, elev_range) {
+plot_monthly <- function(df, elev_range) {
+  
   p <- ggplot(
     df,
-    aes( 
-      x= month_date, 
+    aes(
+      x = month_date,
       y = lst_monthly_mean,
-      color = landcover)
+      color = landcover
+    )
   ) +
-    geom_line(
-      aes(color = landcover),
-      linewidth = 0.6 
-    ) +
+    geom_line(linewidth = 0.6) +
+    
     scale_colour_manual(
       values = c("darkgreen", "sienna2")
     ) +
-    scale_y_continuous(limits = c(10, 30), breaks = seq(10, 30, by = 5)
+    
+    scale_x_date(
+      date_breaks = "1 month",
+      labels = \(x) substr(month.abb[as.POSIXlt(x)$mon + 1], 1, 1)
     ) +
-    annotate("rect", xmin = as.Date("2023-11-01"), xmax = as.Date("2024-04-01"), ymin = -Inf, ymax = Inf, alpha = .2
+    
+    scale_y_continuous(
+      limits = c(10, 30),
+      breaks = seq(10, 30, by = 5)
     ) +
-    annotate("text", x = as.Date("2023-12-01"), y = 28, label = "El Niño"
+    
+    annotate(
+      "rect",
+      xmin = as.Date("2023-11-01"),
+      xmax = as.Date("2024-04-01"),
+      ymin = -Inf,
+      ymax = Inf,
+      alpha = .2
     ) +
+    
+    annotate(
+      "text",
+      x = as.Date("2023-12-01"),
+      y = 28,
+      label = "El Niño"
+    ) +
+    
     labs(
-      x = "Date",
+      x = "Month",
       y = "LST",
-      title = paste("Monthly mean LST time-series for forest and open land at",elev_range, "m")
+      title = paste(
+        "Monthly mean LST time-series for forest and open land at",
+        elev_range, "m"
+      )
     ) +
+    
     theme_classic()
+  
+  p
 }
 
 # ----------------------------------------------------------------------
-monthly <- function(df) {
+monthly_lst <- function(df) {
   df |>
     mutate(
       year  = year(date),

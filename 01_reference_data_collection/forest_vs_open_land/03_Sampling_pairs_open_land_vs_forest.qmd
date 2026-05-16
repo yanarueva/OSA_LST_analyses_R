@@ -1,0 +1,693 @@
+---
+title: "lst_elevation_low_veg_vs_forest"
+format: html
+editor_options: 
+  chunk_output_type: console
+---
+
+# Select pairs (points) of nearby low vegetation and forest pixels at different elevation gradients
+
+## 0. Load and plot the data
+
+Load required R libraries:
+
+```{r}
+library(terra)
+library(ggplot2)
+library(dplyr)
+```
+
+Load prepoccessed data (with same CRS and extent)
+
+```{r}
+# area of interest (aoi)
+aoi <- vect("D:/2025_Osa_Conservation/DATA/Amistosa_climate_hub_32617.shp")
+
+ldc <- rast("D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/landcover_10_2023_32617.tif")
+
+elv <- rast("D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/elevation_30_32617.tif")
+
+# load carbon height (Planet product 30m)
+ch <- rast("D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/canopy_height_30_2023_32617.tif") 
+ch <- crop(x = ch, y = aoi)
+
+# maximum water extent
+mwe <- rast("D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/water_extent_30_32617.tif")
+
+# open street map rivers
+rivers <- vect("D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/rivers_osm_32617.shp")
+```
+
+Plot the loaded data
+
+```{r}
+plot(elv, col = (terra.pal=terrain.colors(10)), range=c(1,3000))
+plot(aoi, add = TRUE)
+
+plot(ldc, type="classes", col = rainbow(nrow(ldc)))
+plot(aoi, add = TRUE)
+
+plot(ch,range=c(0,30))
+plot(aoi, add = TRUE)
+
+plot(mwe,col=c("light gray", "blue"))
+plot(rivers,col="purple", add = TRUE)
+plot(aoi, add = TRUE)
+
+
+
+```
+
+Check the resolution of the raster layers
+
+```{r}
+
+res(ldc)
+res(elv)
+res(ch)
+res(mwe)
+```
+
+## 1. Identify suitable areas for pairs extraction
+
+In the section bellow we will identify the forest and non-forest areas suitable for point extraction.
+
+### Forest and non-forest classification from canopy height
+
+```{r}
+# Reclassify values into categories 
+
+rc <- matrix(c(
+  -0.5, 2, 30, #everything from 0-3 m is open land (code 30), 
+  14.9, 40, 10 #everything above 15 meters is forest (code 10)
+), ncol=3, byrow=TRUE)
+
+ch_cat <- classify(ch, rc, others=NA)
+plot(ch_cat,col = c("forestgreen","goldenrod"))
+```
+
+### Mask out unsuitable areas
+
+Remove the following classes:
+
+-   palm oil
+
+-   pineapple
+
+-   urban
+
+-   mangroves
+
+-   water
+
+-   rivers
+
+All of those should be put in a mask raster where they have values NA, and the rest has value = 1
+
+```{r}
+# mask non-suitable landcover classes (everything that is not low veg and forest in the ldc raster)
+ldc_mask <- ifel(ldc %in% c(10, 30, 110), 1, NA)
+ldc_mask_30 <- resample(ldc_mask, ch, min) # resample to the same resolution as ch (30m)
+
+# mask any water occurence >0
+water_mask <- ifel(mwe>0,NA,1)
+water_mask_30 <- resample(water_mask, ch, min) # resample to the same resolution as ch (30m)
+
+# mask river areas
+r <- ch_cat #first create a raster with the same dimensions as ch_cat
+r[] <- 1 # then assign all values as 1
+
+# then create rasterized river layer
+# cells touched by river = 0
+rivers_mask <- rasterize(
+  rivers,
+  r,
+  field = NA,      # value assigned where river exists
+  background = 1,
+  touches = TRUE
+  )
+
+# writeRaster(rivers_rast, "D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/rivers_30_32617.tif", overwrite = TRUE)
+
+plot(rivers_mask, col = "dark grey")
+# first create an empty raster (all values = 1) based on the canopy height raster
+# plot(water_mask, col = "dark grey")
+plot(water_mask_30, col = "dark grey")
+
+plot(ldc_mask_30, col = "dark grey")
+plot(water_mask_30*ldc_mask_30*rivers_mask, col = "dark grey")
+
+# --------------
+# combined maks of all the previous
+# Apply the mask to the forest non-forest raster
+ldc_pairs <- ch_cat*water_mask_30*ldc_mask_30*rivers_mask
+plot(ldc_pairs, col = c("forestgreen","goldenrod"))
+
+```
+
+### Find pure pixels
+
+The LST data which we should use comes in 100m resolution. Thus we need to make sure that LST pixels which we use to extract the LST values, contain only one single landcover (e.i. pure pixels). We will find our pure pixels for 210m resolution instead of 100m, as this will give even more certainty for the pure landcover.
+
+We will do this using a rolling window of 210x210m matrix. This rolling window will give back all the (30m) landcover pixels which have 97% of pure landcover (in their surrounding of 210x210m).
+
+```{r}
+# The matrix representing the search window of 210m (30m x 7)
+w <- matrix(1, 7, 7)
+
+# function to calculate the mode (meaning the landcover that most often occurs) and how often the mode has occured (n of pixels with that landcover)
+mode_with_count <- function(x) {
+  x <- x[!is.na(x)]
+  if (length(x) == 0) return(c(NA, NA))
+
+  tab <- table(x)
+  m <- tab[which.max(tab)]
+
+  c(mode = as.numeric(names(m)), count = as.numeric(m))
+}
+
+# apply rolling window with the function above
+pure_check <- focal(ldc_pairs, w = w, fun = mode_with_count)
+
+# plot the count of the landcovers
+plot(pure_check[[2]])
+```
+
+```{r}
+# Check if mode occurence is above 48 (97%)
+# this will give us the pure pixels
+r97 <- ifel(pure_check[[2]] >= 48, 1, NA)
+
+plot(r97)
+# ------------------------------
+# make sure not a single water pixel falls in the aggregated cells
+# r97<- r97*water_mask_30
+# plot(r97)
+# ------------------------------
+# now record the landcover of the pure pixel
+ldc_pure <- r97*pure_check[[1]]
+plot(ldc_pure, col = c("forestgreen","goldenrod"))
+
+```
+
+### Add elevation variables (elevation and slope)
+
+Data should be considered unreliable over sloped terrain that is over 20 degrees. 
+
+```{r}
+
+# First resample elevatioon to 30 m ldc_pure layer
+elv_30 <- crop(elv, ext(ldc_pure))
+elv_30 <- resample(elv, ldc_pure, mean)
+
+
+# Calculate the slope
+slope <- terrain(elv_30, v = "slope", unit = "degrees")
+
+
+# The matrix representing the search window
+w <- matrix(1, 7, 7)
+
+# # Calculte only the mode occurences
+# mode_count <- function(x) {
+#   x <- x[!is.na(x)]
+#   if(length(x) == 0) return(NA)
+# 
+#   tab <- table(x)
+#   max(tab)
+# }
+# function to calculate the mode and how often the mode has occured
+slope_mean <- focal(slope, w = w, fun = mean)
+
+
+
+# mask out areas over 20 degrees of slope
+slope_check <- ifel(slope_mean >= 20, NA, 1)
+
+plot(slope)
+plot(slope_mean)
+plot(slope_check, col = "dark grey")
+
+
+# Apply the slope check to the ldc_pure raster
+ldc_slope <- ldc_pure*slope_check
+plot(ldc_slope, col = c("forestgreen","goldenrod"))
+# 
+writeRaster(
+ ldc_slope,
+  "D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/ldc_pure8.tif",
+  overwrite=TRUE)
+
+# crs(elv_30)
+# crs(ldc_pure)
+# 
+# ext(elv_30)
+# ext(ldc_pure)
+# 
+# res(elv_30)
+# res(ldc_pure)
+# 
+# # Check coordinate reference system (CRS)
+# crs(ldc_pure)
+# crs(slope_check)
+# 
+# # Check extent
+# ext(ldc_pure)
+# ext(slope_check)
+# 
+# # Check resolution
+# res(ldc_pure)
+# res(slope_check)
+
+```
+
+## 2. Find the areas that contain forest and low vegetation pairs
+
+```{r}
+# load the filtered raster with open land and forest
+ldc_filtered <- rast("D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/ldc_pure8.tif")
+```
+
+Get a 33x33 pixels (\~1km x 1km )rolling window to find:
+
+-   **A)** max (30 landcover)
+
+-   **B)** min (10 landocover)
+
+    When we combine A) and B) the cells which have both landcovers in a radius of \~500m will be the ones explored for extracting pairs
+
+```{r}
+# create circular matrix matching a 33x33 footprint
+r <- 16
+xy <- expand.grid(x = -r:r, y = -r:r)
+
+w <- matrix(
+  ifelse(sqrt(xy$x^2 + xy$y^2) <= r, 1, NA),
+  nrow = 2*r + 1,
+  byrow = TRUE
+)
+image(w)
+# -------------------------
+
+# aggregate by factor of 33 (30 m → 990 m)
+A <- aggregate(ldc_filtered, fact = 33, fun = max, na.rm = TRUE)
+B <- aggregate(ldc_filtered, fact = 33, fun = min, na.rm = TRUE)
+
+# tolling window finding min and max in 990m radius
+A <- focal(ldc_filtered, w = w, fun = max, na.rm = TRUE)
+B <- focal(ldc_filtered, w = w, fun = min, na.rm = TRUE)
+```
+
+```{r}
+plot(A,col = c("forestgreen","goldenrod"))
+plot(B,col = c("forestgreen","goldenrod"))
+```
+
+**If A + B = 40 then 1, else 0**
+
+This intends to find all the agregated cells (4x4) where both land covers are found (10 from min and 30 from max). This will give us the areas where we can make comparison
+
+```{r}
+# # create mask: if A + B = 40 and D - C > 100 then 1 else 0
+# mask <- ((A + B == 40) & (C - D < 200)) * 1
+
+# create mask: if A + B = 40 and D - C > 100 then 1 else 0
+mask <- ((A + B == 40)) * 1
+
+plot(mask)
+
+writeRaster(mask, "D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/mask_forest_low_veg_pairs3.tif", overwrite = TRUE)
+```
+
+## 3. Spatially balanced samples accross elevations
+
+```{r}
+library(sf)
+library(spsurvey)
+```
+
+All the pixels in the raster produced above indicate a place, where in a radius of 990m, one can find both open land and forest (and use them for paired comparison). Now we will convert the centers of all those pixels to points, and select randomly (and in a spatially balanced way) which centers will be used to obtain the nearby pairs. In summary the workflow is as follows:
+
+-   Convert each pixel center to a point
+
+-   Create your elevation strata
+
+-   Then apply the grts function
+
+First we will load the data with the suitable areas for paired comparison produced in section 3.
+
+```{r}
+suitable <- rast("D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/mask_forest_low_veg_pairs3.tif")
+plot(suitable)
+```
+
+Then we will convert all pixel centers (=1) to points
+
+\# plot(suitable_pts)
+
+```{r}
+# turn all zeros to NULL
+suitable[suitable == 0] <- NA
+
+#convert all remaining pixels to points
+suitable_pts <- as.points(suitable, na.rm = TRUE)
+
+```
+
+The result is of many points. We will not use all of them, but will extract randomly a subset. However, it will not be a completely random approach. To ensure coverage accross elevations we will stratify the extraction accross elevation gradients. We will also use a spatially balanced approach to mitigate spatial autocorrelation.
+
+We can plot the distribution of our points accross elevation:
+
+```{r}
+suitable_elv <- extract(elv,suitable_pts)
+suitable_elv
+
+# histogram
+hist(suitable_elv[,2],
+     main = "Elevation of Points",
+     xlab = "Elevation (m)",
+     col = "lightblue",
+     border = "white")
+
+# interactive histogram
+library(plotly)
+plot_ly(
+  x = suitable_elv[,2],
+  type = "histogram",
+  nbinsx = 30
+) %>%
+layout(
+  title = "Elevation of Points",
+  xaxis = list(title = "Elevation (m)"),
+  yaxis = list(title = "Count")
+)
+```
+
+We then start with the elevation strata:
+
+```{r}
+elv_classes <- classify(
+  elv, 
+  others=NA,
+  rcl = matrix(c(
+    -4, 300, 1,
+    300, 600, 2,
+    600, 900, 3,
+    900, 1200, 4,
+    1200, 1500, 5,
+    1500, 1800, 6
+    ), 
+    ncol = 3,
+    byrow = TRUE)
+  )
+
+plot(elv_classes,type="classes")
+plot(suitable_pts, add = TRUE)
+print(unique(elv_classes))
+
+writeRaster(elv_classes,"D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/elv_classes_32617.tif")
+```
+
+Extract strata for the points
+
+```{r}
+suitable_pts <- extract(elv_classes,suitable_pts, bind=TRUE)
+unique(suitable_pts$elevation) #check if the strata is succesfully recorded
+
+suitable_pts
+plot(suitable_pts)
+```
+
+Our points are now in"SpatVector" But in order to use it with the grts function in spsurvey we need to convert it to sf object.
+
+```{r}
+pts_sf <- st_as_sf(suitable_pts)
+
+# If not already factor/character, convert:
+pts_sf$stratum <- as.factor(pts_sf$elevation)
+unique(suitable_pts$stratum) #check if the strata is succesfully recorded
+pts_sf
+```
+
+### 'grts' function
+
+Now we can extract the spatially balanced points with the grts function
+
+```{r}
+set.seed(51)
+```
+
+```{r}
+strata_n = c('1' = 20,'2' = 10, '3' = 10, '4' = 10, '5' = 10, '6' = 10) #, '107' = 100, '307' = 36)
+pts_sf$stratum <- as.character(pts_sf$stratum)
+pts_sf <- pts_sf[!is.na(pts_sf$stratum), ]
+
+strat_eqprob = grts(pts_sf, n_base = strata_n, stratum_var = "stratum", mindis = 500)
+
+strat_eqprob
+```
+
+```{r}
+str(strat_eqprob)
+```
+
+```{r}
+plot(strat_eqprob, pts_sf, key.width = lcm(3))
+```
+
+```{r}
+# save the selected spatailly balanced points
+strat_eqprob_sf <-strat_eqprob$sites_base
+```
+
+```{r}
+# check what are the names of the attributes in order to clean them
+names(strat_eqprob_sf)
+```
+
+```{r}
+# remove names that are not needed
+strat_eqprob_sf <- strat_eqprob_sf[, !(names(strat_eqprob_sf) %in% c("siteuse", "replsite", "wgt", "ip", "caty", "sframe_stratum", "lat_WGS84", "lon_WGS84" ))]
+
+```
+
+```{r}
+st_write(strat_eqprob_sf, "D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/plots_pts_32617.shp",append=FALSE)
+```
+
+## 4. Extract paired points
+
+Convert the points data to polygons with unique ids
+
+```{r}
+# load the points data
+plots_pts <- vect("D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/plots_pts_32617.shp")
+plot(plots)
+
+#Convert each point to a polygon (990m diameter, 495 radius)
+plots_poly <- buffer(plots_pts,495)
+plot(plots_poly)
+
+plots_poly <-plots_poly["stratum"]
+# Optionally, assign an ID to each polygon
+plots_poly$ID <- 1:nrow(plots_poly)
+# Inspect
+plots_poly
+```
+
+Save them locally (optional)
+
+```{r}
+# Save as GeoJSON
+writeVector(plots_poly, "D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/plots_poly_32617.shp", overwrite = TRUE)
+```
+
+### Check in GIS software the quality of the points
+
+Manual check
+
+Overlapping polygons
+
+Manually moved to avoid overlap
+
+If that was not possible one of them is deleted
+
+Results 67 out of 70 polygons
+
+------------------------------------------------------------------------
+
+# Extract pairs points
+
+To extract the paires we will first convert all the landcover pixels which fall in the plot into points
+
+Load the checked polygons data
+
+```{r}
+# Polygons with suitable point pairs for extraction
+plots_poly <- vect("D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/plots_poly_32617.shp")
+
+# pure landcover raster out of which the exact points will be extracted
+ldc_filtered <- rast("D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/ldc_pure8.tif")
+
+elv <- rast("D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/elevation_30_32617.tif")
+```
+
+```{r}
+
+# 
+# # then apply the mask to the landcover data. This will leave only the areas where we have pairs.
+# ldc_mask <- ldc_filtered*mask
+# plot(ldc_mask, col = c("white","forestgreen","goldenrod"))
+# 
+# # turn all zeros to NULL
+# ldc_mask[ldc_mask == 0] <- NA
+
+#convert all remaining pixels to points
+ldc_pts <- as.points(ldc_filtered, na.rm = TRUE)
+plot(ldc_pts)
+
+#write the id of each polygon to the points
+ldc_pts$poly_id <- extract(plots_poly, ldc_pts)[, "ID"]
+
+# remove points with NA polygon IDs
+ldc_pts <- ldc_pts[!is.na(ldc_pts$poly_id), ]
+
+#Attach landcover class from the raster
+ldc_pts$landcover <- extract(ldc_filtered, ldc_pts)[,2]  # 2nd column = raster values
+
+print(ldc_pts)
+
+
+```
+
+Add attributes of elevation and UID
+
+```{r}
+# #first, convert the elv raster to the same resolution as the filtered landcover raster
+elv_resample <- resample(elv, ldc_filtered, method = "near")  # nearest neighbor
+
+ldc_pts$elv <- extract(elv, ldc_pts)[,2]
+
+```
+
+Add a unique identifier to each single points
+
+```{r}
+# ldc_pts$uid <- seq_len(nrow(ldc_pts)) 
+# ldc_pts
+# nrow(ldc_pts)
+```
+
+Now we will filter only those elevation categories for which we intend to do our LST analyses
+
+```{r}
+
+# # Extract attribute table as data frame
+# df <- as.data.frame(ldc_pts)
+# 
+# # Leave only those points at the chosen elevation category
+# df_filtered <- df %>%
+#   filter( 
+#     (elv >= 0 & elv <= 100) |
+#     (elv >= 600 & elv <= 700) |
+#     (elv >= 1300 & elv <= 1500)
+#   )
+#   
+# # Now subset the original vector to keep only those rows
+# pts_filtered <- ldc_pts[df_filtered$uid, ]   # or use ID column if present
+# pts_filtered
+```
+
+Now we will remove the duplicate points within one polygon.
+
+```{r}
+set.seed(123)
+
+# randomize point order
+ldc_pts_rand <- ldc_pts[sample(nrow(ldc_pts)), ]
+
+# extract attributes
+att_rand <- values(ldc_pts_rand)
+
+# keep one random point per poly_id + landcover
+keep <- !duplicated(att_rand[c("poly_id", "landcover")])
+
+pts_unique <- ldc_pts_rand[keep, ]
+
+pts_unique
+
+```
+
+And remove any single points, where there is not a pair anymore
+
+(DOUBLE CHECK FOR FINAL CODE\< PROBABLY THIS IS NOT NEEDED)
+
+```{r}
+# Get only the attribute table (does not touch geometry)
+att_u <- values(pts_unique)
+
+# Count how many points per poly_id
+poly_counts <- table(att_u$poly_id)
+
+# Keep only poly_ids with more than one point
+keep_ids <- names(poly_counts[poly_counts > 1]) 
+
+# Subset the SpatVector
+pts_unique <- pts_unique[att_u$poly_id %in% keep_ids, ]
+
+pts_unique
+
+```
+
+Check the difference of elevation between pairs. Remove points with difference above 150m.
+
+```{r}
+library(dplyr)
+
+elv_diff <- values(pts_unique) %>%
+  group_by(poly_id) %>%
+  summarise(
+    elv_diff = abs(diff(elv))
+  )%>%
+  arrange(desc(elv_diff))
+
+elv_diff
+
+# polygons to remove
+bad_poly <- elv_diff$poly_id[elv_diff$elv_diff > 150]
+
+bad_poly
+
+# keep only polygons with difference <= 150
+pts_unique_filtered <- pts_unique[!(pts_unique$poly_id %in% bad_poly), ]
+
+pts_unique_filtered
+```
+
+## 5) Export the data
+
+```{r}
+
+writeVector(pts_unique_filtered, "D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/pairs_32617.shp", overwrite = TRUE)
+
+```
+
+## 6) Convert to geojson polygons for Planet request
+
+Planet API does not accept point data. Instead the location of interest need to be sent as polygons in geojson. We will make extremely small polygons (0.5m squares) representing our point data.
+
+```{r}
+pts_unique_filtered
+
+
+# create 0.5 m square polygons around points
+# width = 0.5 m, so buffer distance = 0.25 m
+pts_poly <- buffer(pts_unique_filtered, width = 0.25, capstyle = "square")
+
+# reproject to WGS84 / EPSG:4326
+pts_poly_4326 <- project(pts_poly, "EPSG:4326")
+
+writeVector( pts_poly_4326,  "D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/pairs_poly_4326.geojson",  filetype = "GeoJSON",  overwrite = TRUE)
+ 
+writeVector( pts_poly_4326,  "D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/pairs_poly_4326.shp",  overwrite = TRUE)
+```

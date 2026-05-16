@@ -1,0 +1,70 @@
+---
+title: "00_preprocess_raw_data_layers"
+format: html
+---
+
+# Prepossessing of raw input data
+
+## CRS projections and extent
+
+Reproject the data to the same projection. For Costa Rica, we have chosen EPSG:3261761
+
+```{r}
+library(terra)
+library(ggplot2)
+library(dplyr)
+```
+
+```{r}
+
+# load landcover data (categorical raster)
+ldc <- rast("D:/2023_OSA_Conservation_LULC_internship/DATA_final_results - zenodo/8_Amistosa/8_Amostosa_landcover_YN.tif")
+
+plot(ldc, type="classes", col = rainbow(nrow(ldc)))
+
+ldc <- project(ldc, "EPSG:32617", method = "near")
+writeRaster(
+  ldc, 
+  "D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/landcover_10_2023_32617.tif", 
+  overwrite=TRUE)
+
+# load elevation data (continuous raster)
+
+elv <- rast("D:/2025_Osa_Conservation/DATA_YN/elevation_30_YN.tif") 
+elv <- project(elv, "EPSG:32617")
+writeRaster(
+  elv, 
+  "D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/elevation_30_32617.tif", 
+  overwrite=TRUE)
+
+# water extent
+mwe <- rast("D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/extent_90W_10Nv1_4_2021.tif")
+
+mwe <- project(mwe, "EPSG:32617")
+# We will crop the mwe dataset, to save memory, since it is too big
+mwe_crop <- crop(x = mwe, y = aoi)
+writeRaster(
+  mwe_crop, 
+  "D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/water_extent_30_32617.tif", 
+  overwrite=TRUE)
+# mwe <- crop(x = mwe, y = aoi)
+# crs(ldc)
+# crs(elv)
+# crs(ch)
+# crs(mwe)
+
+# Load open street map rivers
+rivers <- vect("D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/hotosm_cri_waterways_lines_shp/hotosm_cri_waterways_lines_shp.shp")
+rivers <- project(rivers, "EPSG:32617")
+
+# crop to aoi extent
+rivers_crop <- crop(x = rivers, y = aoi)
+rivers_crop 
+crs(rivers_crop)
+
+# save the projected vector
+writeVector(
+  rivers_crop,
+  "D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/rivers_osm_32617.shp"
+)
+```
