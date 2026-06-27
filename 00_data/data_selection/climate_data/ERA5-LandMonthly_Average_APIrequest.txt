@@ -1,0 +1,27 @@
+import cdsapi
+
+dataset = "reanalysis-era5-land-monthly-means"
+request = {
+    "product_type": ["monthly_averaged_reanalysis"],
+    "variable": [
+        "2m_temperature",
+        "total_precipitation"
+    ],
+    "year": [
+        "2020", "2021", "2022",
+        "2023", "2024"
+    ],
+    "month": [
+        "01", "02", "03",
+        "04", "05", "06",
+        "07", "08", "09",
+        "10", "11", "12"
+    ],
+    "time": ["00:00"],
+    "data_format": "grib",
+    "download_format": "unarchived",
+    "area": [9.1539, -83.4251, 8.8365, -83.0653]
+}
+
+client = cdsapi.Client()
+client.retrieve(dataset, request).download()

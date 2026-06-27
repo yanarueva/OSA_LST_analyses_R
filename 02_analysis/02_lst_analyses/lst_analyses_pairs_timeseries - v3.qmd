@@ -1,0 +1,907 @@
+---
+title: "pairs_timeseries"
+format: html
+editor_options: 
+  chunk_output_type: inline
+---
+
+source("functions.R")
+
+```{r}
+library(lubridate)
+library(tidyverse)
+library(terra)
+library(dplyr)
+source("D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/02_lst_analyses/functions.R")
+```
+
+# Raw LST data cleaning and visualization
+
+```{r}
+# Read into a tiblle
+path <- "D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/"
+
+csv <- read_csv(paste0(path, "pairs_timeseries_results.csv"))
+
+
+```
+
+```{r}
+# at high pairs one pair (poly 30) has switched landcover values
+# test <- high_csv |>
+#   mutate(landcover = case_when(poly_id == 30 & landcover == 30 ~ 10, poly_id == 30 & landcover == 10 ~ 30, TRUE ~ landcover))
+# 
+# # write.csv(test, "data/high_pairs_timeseries_results.csv",row.names = FALSE)
+```
+
+```{r}
+# Clean the raw data
+
+df <- clean_lst_data(csv)
+df
+
+```
+
+### Plot raw
+
+```{r}
+# Plot the timeseries
+p <- plot_raw (df, "0-1800")
+p
+
+# Save the plots
+# Map(ggsave,
+  #   filename = c("media/p1.png", "media/p2.png", "media/p3.png"),
+  #   plot = list(p1, p2, p3),
+  #   width = 250,
+  #   height = 150,
+  #   units = "mm"
+  # )
+```
+
+### Facet grids for each separate polygon
+
+```{r}
+
+plot_facet<- function (df, elev_range) {
+  ggplot(df, aes(x = date, y = lst, color = landcover)
+  ) +
+    # geom_point(alpha = 0.4) +            # optional: show the raw points
+    geom_jitter(size = 0.5, alpha = 0.25) +
+    geom_smooth(method = "loess",        # "loess" for local smoothing
+                span = 0.1,              # adjust smoothness (0-1)
+                se = FALSE,
+                fill = "#4e4f52",
+                linewidth = 0.6) +               # display confidence interval
+    scale_colour_manual(
+      values = c("darkgreen", "sienna2")
+    ) +
+    scale_y_continuous(limits = c(5, 35), breaks = seq(5, 35, by = 5)
+    ) +
+    guides(x = guide_axis(angle = 45)) +
+    # scale_x_date(date_breaks = "2 months",  date_labels = "%Y %b")+
+    # scale_y_continuous(limits = c(5, 40), breaks = seq(5, 40, by = 5))+
+    annotate("rect", xmin = as.Date("2023-11-01"), xmax = as.Date("2024-04-01"), ymin = -Inf, ymax = Inf,         alpha = .2
+    ) +
+    # annotate("text", x = as.Date("2023-12-01"), y = 30, label = "El Niño"
+    # ) +
+    labs(
+      x = "Date", 
+      y = "LST (°C)", 
+      title = paste("Daily LST time-series for forest and open land at",elev_range, "m")
+    ) + facet_wrap(~poly_id, ncol = 5) +
+    theme_minimal()
+    
+}
+
+
+
+# facet <- plot_facet(df, "0-1800")
+# ggsave(
+#   "facet.png",
+#     facet,
+#     width = 250,
+#     height = 900,
+#     units = "mm"
+# )
+```
+
+# Monthly LST
+
+## Calculate monthly LST for all points
+
+```{r}
+# function to get teh monthly value for each point
+monthly_lst <- function(df) {
+  df |>
+    mutate(
+      year  = year(date),
+      month = month(date)
+    ) |>
+    group_by(landcover,year, month) |>
+    summarise(
+      lst_monthly_mean = mean(lst, na.rm = TRUE),
+      n_points = n(),    # optional (how many records per month)
+    ) |>
+    ungroup() |>
+    # optional: create a proper first-of-month date
+    mutate(month_date = as.Date(sprintf("%04d-%02d-01", year, month)))
+}
+
+monthly <- monthly_lst(df)
+monthly
+
+# Save the monthly table for fast reuse
+write_csv(monthly, here("04_output", "monthly_lst.csv"))
+
+hottest_months <- monthly |>
+  filter(landcover == "open_land") |>
+  group_by(year) |>
+  slice_max(lst_monthly_mean, n = 1, with_ties = FALSE) |>
+  ungroup()
+
+hottest_months
+# # results
+# landcover  year month lst_monthly_mean n_points month_date
+# open_land  2021     4             19.5     1216 2021-04-01
+# open_land  2022     3             20.1     1280 2022-03-01
+# open_land  2023     4             21.0     1226 2023-04-01
+# open_land  2024     4             22.3     1216 2024-04-01
+    
+```
+
+Plot monthly values
+
+```{r}
+library(scales)
+source("D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/02_lst_analyses/functions.R")
+
+p_month <- plot_monthly(monthly,"0-1800m")
+p_month
+```
+
+## Confidence interval
+
+```{r}
+library(dplyr)
+library(lubridate)
+
+monthly_lst <- function(df) {
+  df |>
+    mutate(
+      year  = year(date),
+      month = month(date)
+    ) |>
+    group_by(landcover, year, month) |>
+    summarise(
+      mean_lst = mean(lst, na.rm = TRUE),
+      sd_lst   = sd(lst, na.rm = TRUE),
+      n_points = sum(!is.na(lst)),
+      .groups = "drop"
+    ) |>
+    mutate(
+      se = sd_lst / sqrt(n_points),
+      ci_lower = mean_lst - 1.96 * se,
+      ci_upper = mean_lst + 1.96 * se,
+      month_date = as.Date(sprintf("%04d-%02d-01", year, month))
+    )
+}
+
+monthly <- monthly_lst(df)
+
+library(ggplot2)
+
+plot_monthly <- function(df, elev_range) {
+
+  ggplot(
+    df,
+    aes(
+      x = month_date,
+      y = mean_lst,
+      color = landcover,
+      fill = landcover
+    )
+  ) +
+
+    geom_ribbon(
+      aes(
+        ymin = ci_lower,
+        ymax = ci_upper
+      ),
+      alpha = 0.1,
+      linewidth = 0.0,
+      show.legend = FALSE
+    ) +
+
+    geom_line(linewidth = 0.6) +
+
+    scale_colour_manual(
+      values = c("darkgreen", "sienna2")
+    ) +
+
+    scale_fill_manual(
+      values = c("darkgreen", "sienna2")
+    ) +
+
+    scale_x_date(
+      date_breaks = "3 months",
+      date_labels = "%b %Y"
+    ) +
+
+    scale_y_continuous(
+      limits = c(10, 30),
+      breaks = seq(10, 30, by = 5)
+    ) +
+
+    annotate(
+      "rect",
+      xmin = as.Date("2023-11-01"),
+      xmax = as.Date("2024-04-01"),
+      ymin = -Inf,
+      ymax = Inf,
+      alpha = .2
+    ) +
+
+    annotate(
+      "text",
+      x = as.Date("2023-12-01"),
+      y = 28,
+      label = "El Niño"
+    ) +
+
+    labs(
+      x = "Month",
+      y = "LST",
+      title = paste(
+        "Monthly mean LST time-series for forest and open land at",
+        elev_range, "m"
+      )
+    ) +
+
+    theme_classic()+
+    theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+}
+
+p_month <- plot_monthly(monthly,"0-1800m")
+p_month
+```
+
+## Change analyses with the bfastmonitor() function
+
+Looking at Oct 2020 - Oct 2022 as a reference (no el Nino conditions) and detecting whether any breaks occur after that
+
+```{r}
+library(bfast)
+
+df_monthly <- monthly
+
+# Choose one landcover - forest or open land
+open_land_monthly_summarize <- df_monthly |>  filter(landcover == "open_land")
+open_land_monthly_summarize
+
+forest_monthly_summarize <- df_monthly |>  filter(landcover == "forest")
+forest_monthly_summarize
+# ------------------------------------------------------------------
+# stl --> seasonal trend decomposition with loess
+ts_o <- ts(open_land_monthly_summarize$lst_monthly_mean, frequency = 12, start = c(2020,10))
+plot(stl(ts_o,"per"))
+
+ts_f <- ts(forest_monthly_summarize$lst_monthly_mean, frequency = 12, start = c(2020,10))
+plot(stl(ts_f,"per"))
+
+# ------------------------------------------------------------------
+# bfast
+
+plot(bfast(ts_o, season = "harmonic", breaks = 1))
+plot(bfast(ts_f, season = "harmonic", breaks = 1))
+
+# ------------------------------------------------------------------
+# bfastmonitor
+
+bfm <- function(df){
+  ts <- ts(df$lst_monthly_mean, frequency = 12, start = c(2020,10))
+  bfm <- bfastmonitor(ts, formula = response ~ harmon, start = c(2022,10))
+}
+
+plot(bfm(open_land_monthly_summarize),ylab = "LST", ylim = c(14,28), sub = "Open Land at 0-1800m")
+(bfm(open_land_monthly_summarize))$magnitude
+
+plot(bfm(forest_monthly_summarize),ylab = "LST", ylim = c(14,28), sub = "Forest at 0-1800m")
+(bfm(forest_monthly_summarize))$magnitude
+# # |>
+# #   select(c(lst))
+#   
+# ts <- ts(open_land_monthly_summarize$lst, frequency = 12, start = c(2020,10))
+# ts
+# 
+# 
+# bfm <- bfastmonitor(ts, formula = response ~ harmon, start = c(2022,10))
+# plot(bfm,ylab = "LST", ylim = c(16,28), sub = "Open Land at 0-100m")
+# 
+# ts(1:10, frequency = 4, start = c(1959,1), end = 1962) # 2nd Quarter of 1959
+```
+
+```{r}
+# 
+# source("functions.R")
+# 
+# Map(plot_bfast_change,
+#     list(df_monthly, df_monthly),
+#     c("forest", "open_land"),
+#     c("0-1800m", "0-1800m")
+#     )
+
+```
+
+# Monthly Anomaly
+
+## Mean across all points
+
+```{r}
+# df <- low_df
+
+plot_monthly_anom <- function (df, df_monthly, elev_range) {
+
+  #--------------------------------------
+  # Get the monthly mean for the first two reference years for each pair points
+  monthly_ref_means <- df |>
+  filter(date >= as.Date("2020-10-01"),
+         date <= as.Date("2022-10-31")
+  ) |>
+  # extract month number
+  mutate(month = month(date)
+  ) |>
+  # compute the mean for each month (across all years in the window)
+  group_by(landcover, month, poly_id) |>
+  summarise(
+    ref_mean = mean(lst, na.rm = TRUE),
+    .groups = "drop"
+  )
+  
+  #--------------------------------------
+  #Get the monthly mean for each pair accross the whole period
+  df_monthly <- df |>
+    mutate(
+      year  = year(date),
+      month = month(date)
+    ) |>
+    group_by(landcover,year, month, poly_id) |>
+    summarise(
+      lst_monthly_mean = mean(lst, na.rm = TRUE),
+      n_points = n(),    # optional (how many records per month)
+    ) |>
+    ungroup() |>
+    # optional: create a proper first-of-month date
+    mutate(month_date = as.Date(sprintf("%04d-%02d-01", year, month)))
+
+  #--------------------------------------
+  df_monthly_anom <- df_monthly |>
+  left_join(monthly_ref_means, by = c("landcover", "month", "poly_id")) |>
+  mutate(anomaly = lst_monthly_mean - ref_mean )
+  
+#--------------------------------------
+  plot_anom<- function (df, elev_range) {
+  ggplot(
+    df,
+    aes(
+      x = month_date,
+      y = anomaly,
+      color = landcover)
+    )+
+    # geom_line(
+    #   aes(color = landcover),
+    #   linewidth = 0.6
+    # ) +
+    geom_jitter(size = 0.6, alpha = 0.5) +
+    geom_smooth(method = "loess",# "loess" for local smoothing
+                span = 0.1,      # adjust smoothness (0-1)
+                se = FALSE,
+                fill = "#4e4f52",
+                linewidth = 1) +
+    scale_colour_manual(
+      values = c("darkgreen", "sienna2")
+    ) +
+    scale_colour_manual(
+      values = c("darkgreen", "sienna2")
+    ) +
+    scale_y_continuous(
+      limits = c(-3, 8), 
+      breaks = seq(-2, 8, by = 2)
+      )+
+    annotate("rect", xmin = as.Date("2023-11-01"), xmax = as.Date("2024-04-01"), ymin = -Inf, ymax = Inf, alpha = .2
+    ) +
+    annotate("text", x = as.Date("2023-12-01"), y = 28, label = "El Niño"
+    ) +
+    geom_hline(
+      yintercept = 0, 
+      color = "#4e4f52", 
+      linetype = "dashed", 
+      linewidth = 0.8) +
+      annotate("rect", xmin = as.Date("2023-11-01"), xmax = as.Date("2024-04-01"), ymin = -Inf, ymax = Inf, alpha = .2
+    )+
+    labs(
+      x = "Date",
+      y = "LST anomaly (°C)",
+      title = paste("Monthly LST anomaly of forest and open land at",elev_range, "m")
+    )+
+    theme_minimal()
+}
+
+plot_anom(df_monthly_anom,elev_range)
+
+}
+
+
+plot_monthly_anom (df, df_monthly, "0-1800m")
+```
+
+## Facets: Pair wise
+
+```{r}
+# df <- low_df
+
+plot_monthly_anom <- function (df, df_monthly, elev_range) {
+
+  #--------------------------------------
+  # Get the monthly mean for the first two reference years for each pair points
+  monthly_ref_means <- df |>
+  filter(date >= as.Date("2020-10-01"),
+         date <= as.Date("2022-10-31")
+  ) |>
+  # extract month number
+  mutate(month = month(date)
+  ) |>
+  # compute the mean for each month (across all years in the window)
+  group_by(landcover, month, poly_id) |>
+  summarise(
+    ref_mean = mean(lst, na.rm = TRUE),
+    .groups = "drop"
+  )
+  
+  #--------------------------------------
+  #Get the monthly mean for each pair accross the whole period
+  df_monthly <- df |>
+    mutate(
+      year  = year(date),
+      month = month(date)
+    ) |>
+    group_by(landcover,year, month, poly_id) |>
+    summarise(
+      lst_monthly_mean = mean(lst, na.rm = TRUE),
+      n_points = n(),    # optional (how many records per month)
+    ) |>
+    ungroup() |>
+    # optional: create a proper first-of-month date
+    mutate(month_date = as.Date(sprintf("%04d-%02d-01", year, month)))
+
+  #--------------------------------------
+  df_monthly_anom <- df_monthly |>
+  left_join(monthly_ref_means, by = c("landcover", "month", "poly_id")) |>
+  mutate(anomaly = lst_monthly_mean - ref_mean )
+  
+#--------------------------------------
+  plot_anom<- function (df, elev_range) {
+  ggplot(
+    df,
+    aes(
+      x = month_date,
+      y = anomaly,
+      color = landcover)
+    )+
+    geom_line(
+      aes(color = landcover),
+      linewidth = 0.6
+    ) +
+    geom_jitter(size = 0.6, alpha = 0.25) +
+    # geom_smooth(method = "loess",        # "loess" for local smoothing
+    #             span = 0.5,              # adjust smoothness (0-1)
+    #             se = FALSE,
+    #             fill = "#4e4f52",
+    #             linewidth = 0.9) +               # display confidence interval
+    scale_colour_manual(
+      values = c("darkgreen", "sienna2")
+    ) +
+    scale_colour_manual(
+      values = c("darkgreen", "sienna2")
+    ) +
+    scale_y_continuous(
+      limits = c(-3, 8), 
+      breaks = seq(-2, 8, by = 2)
+      )+
+    annotate("rect", xmin = as.Date("2023-11-01"), xmax = as.Date("2024-04-01"), ymin = -Inf, ymax = Inf, alpha = .2
+    ) +
+    annotate("text", x = as.Date("2023-12-01"), y = 28, label = "El Niño"
+    ) +
+    geom_hline(
+      yintercept = 0, 
+      color = "#4e4f52", 
+      linetype = "dashed", 
+      linewidth = 0.8) +
+      annotate("rect", xmin = as.Date("2023-11-01"), xmax = as.Date("2024-04-01"), ymin = -Inf, ymax = Inf, alpha = .2
+    )+
+    labs(
+      x = "Date",
+      y = "LST anomaly (°C)",
+      title = paste("Monthly LST anomaly of forest and open land at",elev_range, "m")
+    ) + facet_wrap(~poly_id, ncol = 5) +
+    theme_minimal()
+}
+
+plot_anom(df_monthly_anom,elev_range)
+
+}
+
+
+# Map(plot_monthly_anom,
+#     list(low_df, mid_df, high_df),
+#     list(low_monthly, mid_monthly, high_monthly),
+#     c("0-100m","600-700", "1300-1500")
+# )
+
+facet_anom <- plot_monthly_anom (df, df_monthly, "0-1800m")
+
+
+# ggsave(
+#   "facet_anom.png",
+#     facet_anom,
+#     width = 250,
+#     height = 900,
+#     units = "mm"
+# )
+```
+
+# Cooling calculation
+
+Calculate the cooling for each pait (with identical poly_id) thorughout the study period. Cooling is expressed as the LST difference between open land and forest.
+
+```{r}
+library(readr)
+
+df_cool <- df |>
+  pivot_wider(
+    id_cols = c(poly_id, date),
+    names_from = landcover,
+    values_from = lst
+  ) |>
+  mutate(
+    forest_cooling = open_land - forest
+  )
+
+df_cool
+# Save the cooling table for fast reuse
+write_csv(df_cool, here("04_output", "df_cool.csv"))
+
+```
+
+## Compare cooling for hottest months
+
+```{r}
+# function to calculate the monthly cooling
+monthly_cooling <- function(df) {
+  df |>
+    mutate(
+      year  = year(date),
+      month = month(date)
+    ) |>
+    group_by(poly_id, year, month) |>
+    summarise(
+      cooling_monthly_mean = mean(forest_cooling, na.rm = TRUE),
+      n_points = n(),    # optional (how many records per month)
+    ) |>
+    ungroup() |>
+    # optional: create a proper first-of-month date
+    mutate(month_date = as.Date(sprintf("%04d-%02d-01", year, month)))
+}
+
+# creat a df for monthlu cooling
+df_cool_month <- monthly_cooling(df_cool)
+
+# filter to include only the hottest months (based on monthly lst for open land)
+df_cool_month <- df_cool_month |>
+  filter(
+    (year == 2021 & month == 4) |
+    (year == 2022 & month == 3) |
+    (year == 2023 & month == 4) |
+    (year == 2024 & month == 4)
+  )
+
+df_cool_month
+```
+
+### Plot the data using boxplots
+
+```{r}
+# Libraries
+library(tidyverse)
+library(hrbrthemes)
+library(viridis)
+
+df_cool_month %>%
+  ggplot( aes(x = factor(year), y=cooling_monthly_mean, fill=year)) +
+    geom_boxplot() +
+    scale_fill_viridis( alpha=0.6) +
+  scale_y_continuous(breaks = seq(floor(min(df_cool_month$cooling_monthly_mean, na.rm = TRUE)),
+                                ceiling(max(df_cool_month$cooling_monthly_mean, na.rm = TRUE)),
+                                by = 2)) +
+    geom_jitter(color="black", size=0.4, alpha=0.9) +
+    theme_ipsum() +
+    theme(
+      legend.position="none",
+      plot.title = element_text(size=11)
+    ) +
+  xlab("")+
+  ylab("Forest cooling (°C)")
+```
+
+### Plot cooling time-series: Mean across all pairs
+
+```{r}
+
+plot_forest_cooling <- function(df, elev_range) {
+  
+df<-df_cool
+
+
+ggplot(df_cool, aes(x = date, y = forest_cooling)
+    )+
+    geom_jitter(size = 0.5, alpha = 0.25
+    )+
+    geom_smooth(method = "loess",        # "loess" for local smoothing
+                span = 0.1,              # adjust smoothness (0-1)
+                se = FALSE,
+                fill = "#4e4f52",
+                linewidth = 0.8,
+                color = 'black'
+    )+
+   geom_smooth(method=lm, color = 'darkred'
+    )+
+    geom_hline(
+      yintercept = 0, 
+      color = "#4e4f52", 
+      linetype = "dashed", 
+      linewidth = 0.8
+    )+
+    scale_y_continuous(
+      limits = c(-2.5, 10), 
+      breaks = seq(-2.5, 10, by = 2.5)
+      )+
+    annotate("rect", xmin = as.Date("2023-11-01"), xmax = as.Date("2024-04-01"), ymin = -Inf, ymax = Inf, alpha = .2
+    )+
+    labs(
+      x = "Date",
+      y = "Forest Cooling (°C)",
+      title = paste("Forest induced cooling at",elev_range, "m")
+    )+
+  theme_minimal()
+}
+
+plot_forest_cooling(df,"0-1800m")
+    
+```
+
+### Plot cooling: For each pair
+
+```{r}
+
+plot_forest_cooling_pairs <- function(df, elev_range){ 
+  df<-df_cool
+
+  ggplot(df_cool, aes(x = date, y = forest_cooling)
+    )+
+    geom_jitter(size = 0.5, alpha = 0.25
+    )+
+    geom_smooth(method = "loess",        # "loess" for local smoothing
+                  span = 0.1,              # adjust smoothness (0-1)
+                  se = FALSE,
+                  fill = "#4e4f52",
+                  linewidth = 0.8,
+                color = 'black'
+    )+
+    geom_smooth(method=lm, color = 'darkred'
+    )+
+    geom_hline(
+      yintercept = 0, 
+      color = "#4e4f52", 
+      linetype = "dashed", 
+      linewidth = 0.8) +
+      annotate("rect", xmin = as.Date("2023-11-01"), xmax = as.Date("2024-04-01"), ymin = -Inf, ymax = Inf, alpha = .2
+    )+
+    scale_y_continuous(
+      limits = c(-2.5, 10), 
+      breaks = seq(-2.5, 10, by = 2.5)
+    )+
+    labs(
+      x = "Date",
+      y = "Forest Cooling (°C)",
+      title = paste("Forest induced cooling at",elev_range, "m")
+    )+
+    facet_wrap(~poly_id, ncol = 5
+    )+
+    theme_bw()
+  }
+
+facet_cool <- plot_forest_cooling_pairs(df,"0-1800m")
+
+ggsave(
+  "facet_cool.png",
+    facet_cool,
+    width = 250,
+    height = 900,
+    units = "mm"
+)
+```
+
+## Compare cooling accross elevations
+
+Add elevation for each poly_id based on the mean elevation value from forest and open land
+
+```{r}
+
+# load the points data
+pts <- vect("D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/pairs_32617.shp")
+# convert it to a dataframe
+df_pts <- as.data.frame(pts)
+
+# set the landcover as a factor, as now it is just a code (10 and 30)
+df_pts$landcover <- factor(
+  df_pts$landcover,
+  levels = c(10, 30),
+  labels = c("forest", "open_land")
+)
+
+df_pts
+
+# calculate the mean elevation for each poly_id
+poly_elv <- df_pts |>
+  pivot_wider(
+    id_cols = poly_id,
+    names_from = landcover,
+    values_from = elv
+   )|>
+  mutate(
+    poly_elv = (open_land + forest)/2
+  )
+
+poly_elv
+```
+
+Join the table containing the elevation for each polygon with the table containing the cooling values
+
+```{r}
+df_cool_month <- df_cool_month %>%
+  left_join(
+    poly_elv %>% select(poly_id, poly_elv),
+    by = "poly_id"
+  )
+df_cool_month
+```
+
+### Plot the data
+
+```{r}
+p4 <- ggplot(df_cool_month, aes(x=poly_elv, y=cooling_monthly_mean)) +
+
+  geom_point() +
+
+  geom_smooth(method=lm ,formula = y ~ poly(x, 2), color="red", fill="#69b3a2", se=TRUE) +
+
+  scale_y_continuous(breaks = seq(floor(min(df_cool_month$cooling_monthly_mean, na.rm = TRUE)),
+
+                                ceiling(max(df_cool_month$cooling_monthly_mean, na.rm = TRUE)),
+
+                                by = 2))+
+
+  facet_wrap(~year, ncol = 4) +
+
+  theme_ipsum() 
+
+p4
+```
+
+```{r}
+# linear trend + confidence interval
+p3 <- ggplot(df_cool_month, aes(x=poly_elv, y=cooling_monthly_mean)) +
+  geom_point() +
+  geom_smooth(method=lm , color="red", fill="#69b3a2", se=TRUE) +
+  scale_y_continuous(breaks = seq(floor(min(df_cool_month$cooling_monthly_mean, na.rm = TRUE)),
+                                ceiling(max(df_cool_month$cooling_monthly_mean, na.rm = TRUE)),
+                                by = 2))+
+    labs(
+      x = "Elevation (m)",
+      y = "Forest Cooling (°C)",
+      title = "Linear model") +
+  facet_wrap(~year, ncol = 4) +
+  theme_ipsum() 
+
+p3
+# Non linear - polynomial
+p4 <- ggplot(df_cool_month, aes(x=poly_elv, y=cooling_monthly_mean)) +
+  geom_point() +
+  geom_smooth(method=lm ,formula = y ~ poly(x, 2), color="red", fill="#69b3a2", se=TRUE) +
+  scale_y_continuous(breaks = seq(floor(min(df_cool_month$cooling_monthly_mean, na.rm = TRUE)),
+                                ceiling(max(df_cool_month$cooling_monthly_mean, na.rm = TRUE)),
+                                by = 2))+
+  labs(
+      x = "Elevation (m)",
+      y = "Forest Cooling (°C)",
+      title = "Polynomial model") +
+  facet_wrap(~year, ncol = 4) +
+  theme_ipsum() 
+
+p4
+
+# Non linear - loess
+p4 <- ggplot(df_cool_month, aes(x=poly_elv, y=cooling_monthly_mean)) +
+  geom_point() +
+  geom_smooth(method=loess, color="red", fill="#69b3a2", se=TRUE) +
+  scale_y_continuous(breaks = seq(floor(min(df_cool_month$cooling_monthly_mean, na.rm = TRUE)),
+                                ceiling(max(df_cool_month$cooling_monthly_mean, na.rm = TRUE)),
+                                by = 2))+
+    labs(
+      x = "Elevation (m)",
+      y = "Forest Cooling (°C)",
+      title = "Loess model") +
+  facet_wrap(~year, ncol = 4) +
+  theme_ipsum() 
+
+p4
+```
+
+### Statistical test
+
+```{r}
+# First: reshape your data into paired format for 2021 and 2024 comparison
+df_wide <- df_cool_month %>%
+  filter(year %in% c(2021, 2022, 2023, 2024)) %>%
+  select(poly_id, year, cooling_monthly_mean,poly_elv) %>%
+  pivot_wider(names_from = year, values_from = cooling_monthly_mean)
+
+df_wide
+
+write_csv(df_wide, "df_wide.csv")
+
+# Quick sanity check
+df_wide <- df_wide %>%
+  mutate(diff = `2024` - `2021`)
+
+summary(df_wide$diff)
+hist(df_wide$diff)
+
+# !!!! difference distribution seems slightly skewed. Check what to do in this case
+
+```
+
+#### Hypothesis (important)
+
+Because you *expect 2024 \> 2021*, this is a **one-sided paired test**.
+
+#### Null hypothesis (H₀):
+
+H0:μ2024−2021=0H_0: \mu\_{2024 - 2021} = 0H0​:μ2024−2021​=0
+
+(no change in LST)
+
+#### Alternative hypothesis (H₁):
+
+H1:μ2024−2021\>0H_1: \mu\_{2024 - 2021} \> 0H1​:μ2024−2021​\>0
+
+(2024 is warmer on average)
+
+```{r}
+# Run the paired t-test in R
+t.test(df_wide$`2024`, df_wide$`2021`,
+       paired = TRUE,
+       alternative = "greater")
+
+# Run the paired t-test in R
+t.test(df_wide$`2024`, df_wide$`2022`,
+       paired = TRUE,
+       alternative = "greater")
+
+# Run the paired t-test in R
+t.test(df_wide$`2024`, df_wide$`2023`,
+       paired = TRUE,
+       alternative = "greater")
+```

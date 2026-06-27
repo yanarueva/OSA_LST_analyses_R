@@ -2,7 +2,7 @@
 title: "pairs_timeseries"
 format: html
 editor_options: 
-  chunk_output_type: console
+  chunk_output_type: inline
 ---
 
 source("functions.R")
@@ -12,18 +12,174 @@ library(lubridate)
 library(tidyverse)
 library(terra)
 library(dplyr)
-source("D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/02_lst_analyses/functions.R")
+library(here)
+source(here("01_functions","functions.R"))
 ```
 
-# Raw LST data cleaning and visualization
+# RONI index
 
 ```{r}
 # Read into a tiblle
-path <- "D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/"
 
-csv <- read_csv(paste0(path, "pairs_timeseries_results.csv"))
+csv <- read_csv(here("00_data", "data_selection", "climate_data", "roni.csv"))
 
+colnames(csv)
 
+roni <- csv |>
+  rename(
+    date = 1,
+    roni = 2
+  ) |>
+  mutate(
+    date = as.Date(date),
+    roni = na_if(roni, -9999)
+  )|> 
+  filter(
+    date >= as.Date("2020-10-01"), 
+    date < as.Date("2024-11-01")
+  )
+  
+
+roni
+
+ggplot(roni, aes(date,roni))+
+  geom_point() +
+  scale_x_date(
+    date_labels = "%b %Y",
+    date_breaks = "3 months",
+    date_minor_breaks = "1 month"
+    ) + 
+    annotate("rect", xmin = as.Date("2023-06-01"), xmax = as.Date("2024-05-01"), ymin = -Inf, ymax = Inf,         alpha = .2
+    ) +
+    annotate("text", x = as.Date("2024-06-01"), y = 1.5, label = "El Niño"
+    ) +
+    labs(
+      x = "Date", 
+      y = "Relative Oceanic Niño Index (°C)") +
+    theme(axis.text.x=element_text(angle=45, hjust=1)) 
+  
+```
+
+# T-air and Precipitation
+
+```{r}
+# load the grib file from ERA5 monthly data
+r <- rast(here("00_data", "data_selection", "climate_data", "ERA5-LandMonthly_Average_2020-2024.grib"))
+
+names(r)
+time(r)
+
+# extract the temp and precipatation
+temp <- r[[seq(1, nlyr(r), by = 2)]]
+precip <- r[[seq(2, nlyr(r), by = 2)]]
+
+# calculate the mean for the whole area
+temp_mean <- global(temp, "mean", na.rm = TRUE)
+precip_mean <- global(precip, "mean", na.rm = TRUE)
+
+# join in a tibble
+climate <- tibble(
+  date = as.Date(time(temp)),
+  temperature = temp_mean[, 1],
+  precipitation = precip_mean[, 1]
+)
+
+climate <- climate |>
+    filter(
+    date >= as.Date("2020-10-01"), 
+    date < as.Date("2024-11-01")
+  ) |>
+  mutate(
+    temperature = temperature - 273.15,
+    precipitation = precipitation * 1000
+  )
+
+climate
+```
+
+# LST data
+
+```{r}
+monthly_lst <- read_csv((here("04_output","monthly_lst.csv")))
+monthly_lst<- monthly_lst |>
+  pivot_wider(
+    id_cols = c(month_date),
+    names_from = landcover,
+    values_from = lst_monthly_mean
+  ) |>
+  mutate (
+    mean_lst = (forest + open_land)/2,
+    date = month_date
+  ) 
+
+monthly_lst
+```
+
+# Join RONI and Climate data and LST
+
+```{r}
+# join with the roni table
+full <- roni |>
+  full_join(climate, by = "date") |>
+  full_join(monthly_lst, by = "date")
+
+full
+```
+
+## Plot join
+
+```{r}
+# First restructure the data
+df_long <- full |>
+  pivot_longer(
+    cols = c(roni, temperature, precipitation, mean_lst),
+    names_to = "variable",
+    values_to = "value"
+  )
+
+# Factor the variables, to define the order they will appear in the plot
+df_long$variable <- factor(
+  df_long$variable,
+  levels = c("precipitation", "roni", "temperature", "mean_lst")
+)
+
+# Change the names for the plot
+df_long$variable <- recode(df_long$variable,
+                           temperature = "Air Temperature (°C)",
+                           roni = "Relative Oceanic Niño Index (°C)",
+                           precipitation = "Precipitation (mm)",
+                           mean_lst = "Land Surface Temperature (°C)")
+
+# Then plot with facet wrap
+ggplot(df_long, aes(date, value)) +
+  geom_point() +
+  geom_line() +
+  scale_x_date(
+    date_labels = "%b %Y",
+    date_breaks = "3 months",
+    date_minor_breaks = "1 month"
+    ) +
+    theme(axis.text.x=element_text(angle=45, hjust=1)) +
+  facet_wrap(~ variable, scales = "free_y", ncol = 1)
+```
+
+```{r}
+ggplot(roni, aes(date,roni))+
+  geom_point() +
+  scale_x_date(
+    date_labels = "%b %Y",
+    date_breaks = "3 months",
+    date_minor_breaks = "1 month"
+    ) + 
+    annotate("rect", xmin = as.Date("2023-06-01"), xmax = as.Date("2024-05-01"), ymin = -Inf, ymax = Inf,         alpha = .2
+    ) +
+    annotate("text", x = as.Date("2024-06-01"), y = 1.5, label = "El Niño"
+    ) +
+    labs(
+      x = "Date", 
+      y = "Relative Oceanic Niño Index (°C)") +
+    theme(axis.text.x=element_text(angle=45, hjust=1)) 
+  
 ```
 
 ```{r}
@@ -106,9 +262,9 @@ plot_facet<- function (df, elev_range) {
 # )
 ```
 
-# Monthly LST 
+# Monthly LST
 
-Calculate monthly LST for all points
+## Calculate monthly LST for all points
 
 ```{r}
 # function to get teh monthly value for each point
@@ -152,6 +308,114 @@ Plot monthly values
 ```{r}
 library(scales)
 source("D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/02_lst_analyses/functions.R")
+
+p_month <- plot_monthly(monthly,"0-1800m")
+p_month
+```
+
+## Confidence interval
+
+```{r}
+library(dplyr)
+library(lubridate)
+
+monthly_lst <- function(df) {
+  df |>
+    mutate(
+      year  = year(date),
+      month = month(date)
+    ) |>
+    group_by(landcover, year, month) |>
+    summarise(
+      mean_lst = mean(lst, na.rm = TRUE),
+      sd_lst   = sd(lst, na.rm = TRUE),
+      n_points = sum(!is.na(lst)),
+      .groups = "drop"
+    ) |>
+    mutate(
+      se = sd_lst / sqrt(n_points),
+      ci_lower = mean_lst - 1.96 * se,
+      ci_upper = mean_lst + 1.96 * se,
+      month_date = as.Date(sprintf("%04d-%02d-01", year, month))
+    )
+}
+
+monthly <- monthly_lst(df)
+
+library(ggplot2)
+
+plot_monthly <- function(df, elev_range) {
+
+  ggplot(
+    df,
+    aes(
+      x = month_date,
+      y = mean_lst,
+      color = landcover,
+      fill = landcover
+    )
+  ) +
+
+    geom_ribbon(
+      aes(
+        ymin = ci_lower,
+        ymax = ci_upper
+      ),
+      alpha = 0.1,
+      linewidth = 0.0,
+      show.legend = FALSE
+    ) +
+
+    geom_line(linewidth = 0.6) +
+
+    scale_colour_manual(
+      values = c("darkgreen", "sienna2")
+    ) +
+
+    scale_fill_manual(
+      values = c("darkgreen", "sienna2")
+    ) +
+
+    scale_x_date(
+      date_breaks = "3 months",
+      date_labels = "%b %Y"
+    ) +
+
+    scale_y_continuous(
+      limits = c(10, 30),
+      breaks = seq(10, 30, by = 5)
+    ) +
+
+    annotate(
+      "rect",
+      xmin = as.Date("2023-11-01"),
+      xmax = as.Date("2024-04-01"),
+      ymin = -Inf,
+      ymax = Inf,
+      alpha = .2
+    ) +
+
+    annotate(
+      "text",
+      x = as.Date("2023-12-01"),
+      y = 28,
+      label = "El Niño"
+    ) +
+
+    labs(
+      x = "Month",
+      y = "LST",
+      title = paste(
+        "Monthly mean LST time-series for forest and open land at",
+        elev_range, "m"
+      )
+    ) +
+
+    theme_classic()+
+    theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+}
 
 p_month <- plot_monthly(monthly,"0-1800m")
 p_month
@@ -224,7 +488,7 @@ plot(bfm(forest_monthly_summarize),ylab = "LST", ylim = c(14,28), sub = "Forest 
 
 ```
 
-# Monthly Anomaly 
+# Monthly Anomaly
 
 ## Mean across all points
 
@@ -744,10 +1008,12 @@ p4
 # First: reshape your data into paired format for 2021 and 2024 comparison
 df_wide <- df_cool_month %>%
   filter(year %in% c(2021, 2022, 2023, 2024)) %>%
-  select(poly_id, year, cooling_monthly_mean) %>%
+  select(poly_id, year, cooling_monthly_mean,poly_elv) %>%
   pivot_wider(names_from = year, values_from = cooling_monthly_mean)
 
 df_wide
+
+write_csv(df_wide, "df_wide.csv")
 
 # Quick sanity check
 df_wide <- df_wide %>%
@@ -766,13 +1032,13 @@ Because you *expect 2024 \> 2021*, this is a **one-sided paired test**.
 
 #### Null hypothesis (H₀):
 
-H0:μ2024−2021=0H_0: \mu_{2024 - 2021} = 0H0​:μ2024−2021​=0
+H0:μ2024−2021=0H_0: \mu\_{2024 - 2021} = 0H0​:μ2024−2021​=0
 
 (no change in LST)
 
 #### Alternative hypothesis (H₁):
 
-H1:μ2024−2021>0H_1: \mu_{2024 - 2021} > 0H1​:μ2024−2021​\>0
+H1:μ2024−2021\>0H_1: \mu\_{2024 - 2021} \> 0H1​:μ2024−2021​\>0
 
 (2024 is warmer on average)
 
