@@ -29,6 +29,7 @@ writeRaster(
   overwrite=TRUE)
 
 # load elevation data (continuous raster)
+# NASA SRTM Digital Elevation 30m downloaded for the region of interest from GEE
 
 elv <- rast("D:/2025_Osa_Conservation/DATA_YN/elevation_30_YN.tif") 
 elv <- project(elv, "EPSG:32617")
@@ -37,7 +38,7 @@ writeRaster(
   "D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/elevation_30_32617.tif", 
   overwrite=TRUE)
 
-# water extent
+# maximum water extent
 mwe <- rast("D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/extent_90W_10Nv1_4_2021.tif")
 
 mwe <- project(mwe, "EPSG:32617")
