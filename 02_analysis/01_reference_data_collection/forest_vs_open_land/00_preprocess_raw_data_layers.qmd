@@ -13,59 +13,64 @@ Reproject the data to the same projection. For Costa Rica, we have chosen EPSG:3
 library(terra)
 library(ggplot2)
 library(dplyr)
+library(here)
 ```
 
 ```{r}
-
+# ----------------------------------------
 # load landcover data (categorical raster)
-ldc <- rast("D:/2023_OSA_Conservation_LULC_internship/DATA_final_results - zenodo/8_Amistosa/8_Amostosa_landcover_YN.tif")
+# https://doi.org/10.5281/zenodo.13329296
+ldc <- rast(here("00_data", "raw", "8_Amostosa_landcover_YN.tif"))
 
 plot(ldc, type="classes", col = rainbow(nrow(ldc)))
 
+# reproject the data
 ldc <- project(ldc, "EPSG:32617", method = "near")
-writeRaster(
-  ldc, 
-  "D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/landcover_10_2023_32617.tif", 
-  overwrite=TRUE)
 
+# save the processed data
+writeRaster(
+  ldc, here("00_data", "processed", "landcover_10_2023_32617.tif"),overwrite=TRUE)
+  
+# -----------------------------------------
 # load elevation data (continuous raster)
 # NASA SRTM Digital Elevation 30m downloaded for the region of interest from GEE
 
-elv <- rast("D:/2025_Osa_Conservation/DATA_YN/elevation_30_YN.tif") 
+elv <- rast(here("00_data", "raw", "elevation_30_YN.tif" ))
+
 elv <- project(elv, "EPSG:32617")
 writeRaster(
-  elv, 
-  "D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/elevation_30_32617.tif", 
-  overwrite=TRUE)
+  elv, here("00_data","processed","elevation_30_32617.tif"),overwrite=TRUE)
 
-# maximum water extent
-mwe <- rast("D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/extent_90W_10Nv1_4_2021.tif")
+# ---------------------------------------
+# maximum water extent 1984–2024
+# https://doi:10.1038/nature20584 
+
+mwe <- rast(here("00_data","raw", "extent_90W_10N_v1_5_2024.tif")) 
 
 mwe <- project(mwe, "EPSG:32617")
-# We will crop the mwe dataset, to save memory, since it is too big
-mwe_crop <- crop(x = mwe, y = aoi)
-writeRaster(
-  mwe_crop, 
-  "D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/water_extent_30_32617.tif", 
-  overwrite=TRUE)
-# mwe <- crop(x = mwe, y = aoi)
-# crs(ldc)
-# crs(elv)
-# crs(ch)
-# crs(mwe)
 
+# We will crop the mwe  according to our area of interest, to save memory, since it is too big
+aoi <- vect(here("00_data", "raw", "Amistosa_climate_hub_32617.shp"))
+
+mwe_crop <- crop(x = mwe, y = aoi)
+
+writeRaster(
+  mwe_crop, here("00_data","processed","water_extent_30_32617.tif"), overwrite=TRUE)
+
+# -------------------------------------
 # Load open street map rivers
-rivers <- vect("D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/hotosm_cri_waterways_lines_shp/hotosm_cri_waterways_lines_shp.shp")
+rivers <- vect(here("00_data", "raw", "hotosm_cri_waterways_lines_shp.shp")) 
 rivers <- project(rivers, "EPSG:32617")
 
 # crop to aoi extent
 rivers_crop <- crop(x = rivers, y = aoi)
-rivers_crop 
-crs(rivers_crop)
+
 
 # save the projected vector
 writeVector(
-  rivers_crop,
-  "D:/2025_Osa_Conservation/GIS_projects/OSA_LST_analyses_R/00_data/data_selection/rivers_osm_32617.shp"
-)
+  rivers_crop, here("00_data", "processed", "rivers_osm_32617.shp")
+  )
+# -------------------------------------
+#  Canopy height
+# the canopy height has been downloaded in tiles from Planet explorer and mosaiced in QGIS with EPSG:32617 projection
 ```
