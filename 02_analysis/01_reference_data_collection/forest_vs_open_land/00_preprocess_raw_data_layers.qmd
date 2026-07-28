@@ -5,18 +5,23 @@ format: html
 
 # Prepossessing of raw input data
 
-## CRS projections and extent
-
-Reproject the data to the same projection. For Costa Rica, we have chosen EPSG:3261761
-
 ```{r}
 library(terra)
 library(ggplot2)
 library(dplyr)
 library(here)
+library(stringr)
+library(readr)
 ```
 
+## Spatial Layers projections and extent
+
+Reproject the data to the same projection. For Costa Rica, we have chosen EPSG:3261761
+
 ```{r}
+
+# this is our area of interest, it has been provided in already processed form, (projection 32617) done in ArcGIS software
+aoi <- vect(here("00_data", "processed", "Amistosa_climate_hub_32617.shp"))
 # ----------------------------------------
 # load landcover data (categorical raster)
 # https://doi.org/10.5281/zenodo.13329296
@@ -50,7 +55,6 @@ mwe <- rast(here("00_data","raw", "extent_90W_10N_v1_5_2024.tif"))
 mwe <- project(mwe, "EPSG:32617")
 
 # We will crop the mwe  according to our area of interest, to save memory, since it is too big
-aoi <- vect(here("00_data", "raw", "Amistosa_climate_hub_32617.shp"))
 
 mwe_crop <- crop(x = mwe, y = aoi)
 
@@ -73,4 +77,175 @@ writeVector(
 # -------------------------------------
 #  Canopy height
 # the canopy height has been downloaded in tiles from Planet explorer and mosaiced in QGIS with EPSG:32617 projection
+```
+
+## ERA5 2m air temperature 
+
+```{r}
+# country boundaries
+base <- vect (here("00_data", "vis_layers", "world-administrative-boundaries.geojson")) |>
+  project("EPSG:32617") |>
+  crop(ext(aoi))
+
+plot(base)
+
+plot(base[1,])
+plot(base[2,]) #background
+plot(base[3,])
+
+# aggregate costa rica and panama land borders, base[2, ] is a background poly
+b_union <- terra::union(base[1,],base[3,]) 
+b_union <- terra::aggregate(b_union, fun = "mean", dissolve = TRUE)
+
+
+plot(b_union) 
+
+
+ocean <- erase(base[2,], b_union)
+plot(ocean)
+
+# -----------------------------------------------------------
+# load the grib file from ERA5 monthly data
+era5 <- rast(here("00_data", "99_temp", "era5_2m_temp_1900UTC_1330solar.grib")) |>
+  project("EPSG:32617", method = "near")
+
+# crate a mask layer that masks everything outside of the aoi, and does not allow any pixels touching ocean
+
+r <- era5[[1]] #raster of same res as era5,
+values(r) <- 1 # but with only 1 cell values
+
+mask1 <- mask(r, ocean, touches=TRUE, updatevalue=0) 
+mask1 <- 1 - mask1 #invert the values
+plot(mask1)
+
+mask2 <- mask(r, aoi, touches=FALSE, updatevalue=0)
+plot(mask2)
+
+mask <- mask1*mask2
+mask[mask == 0] <- NA
+
+plot (mask)
+plot(aoi, add = TRUE)
+
+# ---------------------------
+era5_masked <- era5*mask
+plot(era5_masked[[1]])
+plot(aoi, add = TRUE)
+```
+
+```{r}
+
+
+# load the grib file from ERA5 monthly data
+meangrib <- function(path, mask) {
+  r <- rast(path)
+  # project
+  r <- project(r, "EPSG:32617", method = "near") 
+  # remove pixels outside the aoi, using the precreated mask
+  r <- r*mask
+  
+}
+# load the grib file from ERA5 monthly data
+# readgrib <- function(path, mask) {
+t1330_r <- meangrib(here("00_data", "99_temp", "era5_2m_temp_1900UTC_1330solar.grib"), mask)
+plot(t1330_r[[1]])
+# ------------------
+# #write a tif file for visualization later
+# writeRaster(
+#   t1330_r[[1]],
+#   here("00_data", "vis_layers", "ERA5_pixel_extent.tif"),
+#   overwrite = TRUE
+# )
+#-------------------------
+
+t0130_r <- meangrib(here("00_data", "99_temp", "era5_2m_temp_0700UTC_0130solar.grib"), mask)
+plot(t0130_r[[1]])
+
+t1330_mean <- global(t1330_r, "mean", na.rm = TRUE)
+
+t0130_mean <- global(t0130_r, "mean", na.rm = TRUE)
+# ------------------------------------
+
+# join in a tibble
+climate <- tibble(
+  # date = as.Date(time(temp)),
+  t1330 = t1330_mean[, 1],
+  t0130 = t0130_mean[, 1],
+  band_t1330 = names(t1330_r),
+  band_t0130 = names(t0130_r)
+  # n_month = as.numeric(str_extract(names(t1300), "\\d+$"))
+  ) |> 
+  # arrange(n_month) |>
+  mutate(
+    date = seq(
+      as.Date("2020-01-01"),
+      by = "month",
+      length.out = n()
+    )
+  )
+
+climate
+
+# -------------------------------
+climate <- climate |>
+    filter(
+    date >= as.Date("2020-10-01"), 
+    date < as.Date("2024-11-01")
+  ) |>
+  mutate(
+    t1330 = t1330 - 273.15,
+    t0130 = t0130 - 273.15
+    # precipitation = precipitation * 1000
+  ) |>
+  select(c("date", "t1330", "t0130"))
+
+climate
+
+# Save the monthly table for fast reuse
+write_csv(climate, here("00_data","processed", "t2m_1330_0130_solar_time.csv"), append = FALSE)
+```
+
+## ERA5 precipitation data 
+
+-\> we have downloaded the hourly data and are manually merging it together, because of an official issue reported on the Copernicus portal
+
+```{r}
+
+r <- rast(here("00_data", "99_temp", "era5_total_precipitation_hourly.nc"))
+r <- project(r, "EPSG:32617", method = "near") 
+  # remove pixels outside the aoi, using the precreated mask
+r <- r*mask
+
+tp_hourly <- global(r, fun = "mean", na.rm = TRUE)
+tp_hourly
+
+tp_hourly$date_time <- time(r)
+tp_hourly
+# --------------------------------
+library(dplyr)
+library(lubridate)
+
+monthly_tp <- tp_hourly |>
+  mutate(
+    date = floor_date(date_time, "month")
+  ) |>
+  group_by(date) |>
+  summarise(
+    precipitation = sum(mean, na.rm = TRUE)
+  )
+monthly_tp
+# --------------------------------
+
+monthly_tp <- monthly_tp |>
+  mutate(
+    precipitation_mm = precipitation * 1000,
+  ) |>
+    filter(
+    date >= as.Date("2020-10-01"), 
+    date < as.Date("2024-11-01")
+  )|>
+  select(c("date", "precipitation_mm"))
+
+# Save the monthly table for fast reuse
+write_csv(monthly_tp, here("00_data","processed", "monthly_total_precip.csv"), append = FALSE)
 ```

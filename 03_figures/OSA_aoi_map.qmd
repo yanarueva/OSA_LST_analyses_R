@@ -17,43 +17,60 @@ library(here)
 ```{r}
 
 # area of interest (aoi)
-aoi <- vect(here("00_data", "data_selection", "Amistosa_climate_hub_32617.shp"))
+aoi <- vect(here("00_data", "processed", "Amistosa_climate_hub_32617.shp"))
 
+# landcover
 ldc <- rast(here("00_data", "data_selection", "landcover_10_2023_32617.tif"))
 
-
+# elevation
 elv <- rast(here("00_data", "data_selection", "elevation_30_32617.tif")) |>
   mask(aoi)
 
+# paired points locations
 pairs_poly <- vect(here("00_data", "data_selection", "plots_poly_32617.shp")) |>
   centroids()
+
+# climate data pixels extent
+era5 <- rast(here("00_data", "vis_layers", "ERA5_pixel_extent.tif")) |>
+  as.polygons(aggregate=FALSE)
+
+plot(era5)
 # adding a categorical value, to use it for the legend of our map
 pairs_poly$type <- "Pair location"
 pairs_poly
-base <- vect ("D:/Downloads/world-administrative-boundaries.geojson")
-# --------------------------------------
+
+# ----------------------------------------------------
+
 # Recalssify LULC
 rcl <- matrix(c(
-  110, 110, 10,
-  12, 12, 11,
-  60, 60, 30,
-  90, 90, 80
+  109, 111, 10, #110
+  11.5, 12.5, 11, #12
+  59.5, 60.5, 30, #60
+  89.5, 90.5, 80 #90
 ), ncol = 3, byrow = TRUE)
+
 
 ldc <- classify(ldc, rcl)
 
 levels(ldc) <- data.frame(
   ID = c(10, 11, 13, 30, 50, 80, 95),
-  landcover = c("Forests", "Palm plantations", "Pineapple", "Open land", "Build-up", "Water and wetlands", "Mangrooves"))
-
+  landcover = c("Forests", "Palm plantations", "Pineapple", "Open land", "Build-up", "Water and wetlands", "Mangrooves")
+  )
 
 ```
 
-Check this tutorial for inforamation on creating maps with t_map: <https://r.geocompx.org/adv-map#fig:layout1>
-
 ```{r}
+# # get the bounding box of the aoi in long and lat
+# # Transform to longitude/latitude
+# aoi_wgs <- project(aoi, "EPSG:4326")
+# 
+# # Get bounding box
+# aoi_bbox <- ext(aoi_wgs)
+# 
+# aoi_bbox
+# # --------------------------------------------------
 
-# Control the bounding box for whcih the map will be desplayed
+# # Control the bounding box for whcih the map will be desplayed
 bb <- st_bbox(aoi)
 
 bb_expanded <- bb
@@ -62,44 +79,34 @@ bb_expanded["xmax"] <- bb["xmax"] + 20000
 bb_expanded["ymin"] <- bb["ymin"] - 5000
 bb_expanded["ymax"] <- bb["ymax"] + 5000
 
-# --------------------------------------------------
+# # --------------------------------------------------
+# country boundaries
+base <- vect (here("00_data", "vis_layers", "world-administrative-boundaries.geojson")) |>
+  project("EPSG:32617") |>
+  crop(bb_expanded)
 
-# tm_basemap("CartoDB.PositronNoLabels") +
-tm_shape(base) +  
-  tm_polygons() + 
-  
-tm_shape(elv)+ 
-  tm_raster( col.legend = tm_legend(position = tm_pos_in("right", "bottom"))) +
-  
-tm_shape(aoi) + 
-  tm_borders() +
-
-tm_shape(pairs_poly) +
-  tm_dots(col = "type",
-          col.legend = tm_legend(title = "",
-                                 position = tm_pos_in("right", "bottom"))) +
-tmap_options(bbox = st_bbox(bb_expanded)) +
-  # tm_layout(bg.color = "lightblue")
-tm_graticules(alpha = 0.5, n.x = 4, n.y = 4) +
-  tm_layout(legend.text.size = 0.5, 
-          fontfamily = "Arial"
-          )+
-tm_scalebar(position = tm_pos_in("right", "bottom"), 
-              breaks = c(0, 15, 30))
-#+
-#tm_scalebar(breaks = c(0, 25, 50), text.size = 0.7)
-   
+plot(base, col = "grey")
 
 
-# c(
-#     -4, 300, 1,
-#     300, 600, 2,
-#     600, 900, 3,
-#     900, 1200, 4,
-#     1200, 1500, 5,
-#     1500, 1800, 6
-#     )
+# --------------------------------------
+# points for annotation
+countries <- data.frame(
+  label = c("Costa Rica", "Panama"),
+  lon = c(-83.65, - 82.7),
+  lat = c(9.24, 9.2)
+) |>
+  st_as_sf(coords = c("lon", "lat"), crs = 4326)
+
+countries <- st_transform(countries, 32617)
+# -----------------------------------------------
+
+
+plot(base[1,])
+plot(base[2,]) #background
+plot(base[3,])
 ```
+
+Check this tutorial for inforamation on creating maps with t_map: <https://r.geocompx.org/adv-map#fig:layout1>
 
 ```{r}
 
@@ -113,21 +120,11 @@ tm_scalebar(position = tm_pos_in("right", "bottom"),
 # bb_expanded["ymax"] <- bb["ymax"] + 5000
 
 # # --------------------------------------------------
-# 
-# points for annotation
-countries <- data.frame(
-  label = c("Costa Rica", "Panama"),
-  lon = c(-83.65, - 82.7),
-  lat = c(9.24, 9.2)
-) |>
-  st_as_sf(coords = c("lon", "lat"), crs = 4326)
 
-countries <- st_transform(countries, 32617)
-# -----------------------------------------------
-
-# tmap_mode("plot")
-
-tm_shape(base) +  
+# elv <-
+tm_shape(base[1,]) +  
+  tm_polygons() + 
+tm_shape(base[3,]) +  
   tm_polygons() + 
 tm_shape(elv)+
   tmap_options(bbox = st_bbox(bb_expanded)) +
@@ -164,9 +161,11 @@ elv
 
 
 # ----------------------------------------------------
-
-tm_shape(base) +  
+# lulc <-
+tm_shape(base[1,]) +  
   tm_polygons() + 
+tm_shape(base[3,]) +   
+  tm_polygons() +
 tm_shape(ldc)+
   tm_raster(
     style = "cat",
@@ -203,42 +202,86 @@ tm_shape(pairs_poly) +
     fontfamily = "Arial",
     fontface = "bold"
   )
+
 #----------------------------------
-tmap_arrange(elv, lulc)
+# tmap_arrange(elv, lulc)
 
 
 
 ```
 
 ```{r}
-# ------------------------------------------------------
-#  Interactive map, with coordinate pop ups
-
-tmap_mode("view")
-
-tm_shape(base) +
+# Show era5 pixels
+# era5$layer <- factor("ERA5", levels = "ERA5") #dummy attribute for legend
+# lulc <-
+tm_shape(base[1,]) +  
+  tm_polygons() + 
+tm_shape(base[3,]) +   
   tm_polygons() +
-tm_shape(elv)+
-  # tmap_options(bbox = st_bbox(bb_expanded)) +
-  tm_raster(palette = terrain.colors(7),
-            breaks = c(0, 300, 600, 900, 1200, 1500, 1800, Inf),
-            title = "Elevation (m)") +
-
-  #           ) +
+tmap_options(bbox = st_bbox(bb_expanded)) +
 tm_shape(aoi) +
-  tm_borders() +
+  tm_polygons() +
+tm_shape(era5) +
+  tm_borders(col = "purple", lwd = 2) +
 tm_shape(pairs_poly) +
   tm_dots(col = "type",
           col.legend = tm_legend(title = "")) +
-  # tm_graticules(alpha = 0.5, n.x = 4, n.y = 4) +
-  tm_scalebar(breaks = c(0, 15, 30))+
-  # tm_layout(
-  #  legend.position = tm_pos_in("0.78", "0.46"),
-  #  scalebar.position = tm_pos_in("0.73", "0.08"),
-  #  legend.text.size = 0.5,
-  #  legend.title.size = 0.5,
-  #         fontfamily = "Arial") +
-  tm_mouse_coordinates()
+tm_graticules(alpha = 0.0, n.x = 4, n.y = 4, labels.col = 'white') +
+  # tm_scalebar(breaks = c(0, 15, 30))+
+tm_layout(
+   legend.position = tm_pos_in("0.73", "0.18"),
+   # scalebar.position = tm_pos_in("0.73", "0.08"),
+   legend.text.size = 0.5, 
+   legend.title.size = 0.5,
+          fontfamily = "Arial") +
+tm_shape(countries) +
+  tm_dots(alpha = 0) +
+tm_text("label", size = 0.8, fontfamily = "Arial") +
+tm_credits(
+    text = "c",
+    position = c("LEFT", "TOP"),
+    size = 2.0,
+    fontfamily = "Arial",
+    fontface = "bold"
+  ) +
+tm_add_legend(
+  type = "line",
+  labels = "ERA5 pixels",
+  col = "purple",
+  lwd = 2
+)
+```
+
+```{r}
+# # ------------------------------------------------------
+# #  Interactive map, with coordinate pop ups
+# 
+# tmap_mode("view")
+# # tmap_mode("plot")
+# 
+# tm_shape(base) +
+#   tm_polygons() +
+# tm_shape(elv)+
+#   # tmap_options(bbox = st_bbox(bb_expanded)) +
+#   tm_raster(palette = terrain.colors(7),
+#             breaks = c(0, 300, 600, 900, 1200, 1500, 1800, Inf),
+#             title = "Elevation (m)") +
+# 
+#   #           ) +
+# tm_shape(aoi) +
+#   tm_borders() +
+# tm_shape(pairs_poly) +
+#   tm_dots(col = "type",
+#           col.legend = tm_legend(title = "")) +
+#   # tm_graticules(alpha = 0.5, n.x = 4, n.y = 4) +
+#   tm_scalebar(breaks = c(0, 15, 30))+
+#   # tm_layout(
+#   #  legend.position = tm_pos_in("0.78", "0.46"),
+#   #  scalebar.position = tm_pos_in("0.73", "0.08"),
+#   #  legend.text.size = 0.5,
+#   #  legend.title.size = 0.5,
+#   #         fontfamily = "Arial") +
+#   tm_mouse_coordinates()
 
 
 ```

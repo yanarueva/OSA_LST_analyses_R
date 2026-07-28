@@ -991,7 +991,9 @@ test2 <- t.test(df_wide$`2024`, df_wide$`2022`,
 test3 <- t.test(df_wide$`2024`, df_wide$`2023`,
        paired = TRUE,
        alternative = "greater")
-
+test1
+test2
+test3
 # Bind the p values all together to perform multiple testing
 p <- c(test1$p.value, test2$p.value, test3$p.value)
 
