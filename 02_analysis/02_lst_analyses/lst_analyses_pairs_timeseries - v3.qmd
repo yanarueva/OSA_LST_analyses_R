@@ -2,10 +2,8 @@
 title: "pairs_timeseries"
 format: html
 editor_options: 
-  chunk_output_type: inline
+  chunk_output_type: console
 ---
-
-source("functions.R")
 
 ```{r}
 library(lubridate)
@@ -23,12 +21,12 @@ source(here("01_functions", "functions.R"))
 ## Calculation
 
 ```{r}
-# Read into a tiblle
-csv <- read_csv(here("04_output", "pairs_timeseries_results.csv"))
-
-# Clean the raw data
-df <- clean_lst_data(csv)
-df
+# # Read into a tiblle
+# csv <- read_csv(here("04_output", "pairs_timeseries_results.csv"))
+# 
+# # Clean the raw data
+# df <- clean_lst_data(csv)
+# df
 
 ```
 
@@ -136,30 +134,7 @@ plot_facet<- function (df, elev_range) {
 
 ## Calculation
 
-```{r}
-# apply function monthly_lst() to get the monthly value for each point
-monthly <- monthly_lst(df)
-monthly
-
-# Save the monthly table for fast reuse
-write_csv(monthly, here("04_output", "monthly_lst.csv"))
-
-# print the hottest months for open land according to the lst data
-hottest_months <- monthly |>
-  filter(landcover == "open_land") |>
-  group_by(year) |>
-  slice_max(lst_monthly_mean, n = 1, with_ties = FALSE) |>
-  ungroup()
-
-hottest_months
-# # results
-# landcover  year month lst_monthly_mean n_points month_date
-# open_land  2021     4             19.5     1216 2021-04-01
-# open_land  2022     3             20.1     1280 2022-03-01
-# open_land  2023     4             21.0     1226 2023-04-01
-# open_land  2024     4             22.3     1216 2024-04-01
-    
-```
+`{# {r} # # apply function monthly_lst() to get the monthly value for each point # monthly <- monthly_lst(df) # monthly #  # # Save the monthly table for fast reuse # write_csv(monthly, here("04_output", "monthly_lst.csv")) #  # # print the hottest months for open land according to the lst data # hottest_months <- monthly |> #   filter(landcover == "open_land") |> #   group_by(year) |> #   slice_max(lst_monthly_mean, n = 1, with_ties = FALSE) |> #   ungroup() #  # hottest_months # # # results # # landcover  year month lst_monthly_mean n_points month_date # # open_land  2021     4             19.5     1216 2021-04-01 # # open_land  2022     3             20.1     1280 2022-03-01 # # open_land  2023     4             21.0     1226 2023-04-01 # # open_land  2024     4             22.3     1216 2024-04-01 #`
 
 ## Plot monthly
 
@@ -576,46 +551,46 @@ library(here)
 source(here("01_functions", "functions.R"))
 
 library(readr)
-# Read into a tiblle
-csv <- read_csv(here("04_output", "pairs_timeseries_results.csv"))
-
-# Clean the raw data
-df <- clean_lst_data(csv)
-df
-
-# Calculate the cooling for each pair (with identical poly_id) throughout the study period. Cooling is expressed as the LST difference between open land and forest.
-df_cool <- df |>
-  pivot_wider(
-    id_cols = c(poly_id, date),
-    names_from = landcover,
-    values_from = lst
-  ) |>
-  mutate(
-    forest_cooling = open_land - forest #NOTE! cooling is usealy expressed in negative terms as fores - open land. Here we calculate it in positive terms as this helps in the following analyses and stat tests 
-  )
-
-df_cool
+# # Read into a tiblle
+# csv <- read_csv(here("04_output", "pairs_timeseries_results.csv"))
+# 
+# # Clean the raw data
+# df <- clean_lst_data(csv)
+# df
+# 
+# # Calculate the cooling for each pair (with identical poly_id) throughout the study period. Cooling is expressed as the LST difference between open land and forest.
+# df_cool <- df |>
+#   pivot_wider(
+#     id_cols = c(poly_id, date),
+#     names_from = landcover,
+#     values_from = lst
+#   ) |>
+#   mutate(
+#     forest_cooling = open_land - forest #NOTE! cooling is usealy expressed in negative terms as fores - open land. Here we calculate it in positive terms as this helps in the following analyses and stat tests 
+#   )
+# 
+# df_cool
 
 ```
 
 ### Monthly cooling
 
 ```{r}
-# calculate the monthly cooling
-df_cool_month <- df_cool |>
-    mutate(
-      year  = year(date),
-      month = month(date)
-    ) |>
-    group_by(poly_id, year, month) |>
-    summarise(
-      cooling_monthly_mean = mean(forest_cooling, na.rm = TRUE),
-      n_points = n(),    # optional (how many records per month)
-    ) |>
-    ungroup() |>
-    # optional: create a proper first-of-month date
-    mutate(month_date = as.Date(sprintf("%04d-%02d-01", year, month))
-           )
+# # calculate the monthly cooling
+# df_cool_month <- df_cool |>
+#     mutate(
+#       year  = year(date),
+#       month = month(date)
+#     ) |>
+#     group_by(poly_id, year, month) |>
+#     summarise(
+#       cooling_monthly_mean = mean(forest_cooling, na.rm = TRUE),
+#       n_points = n(),    # optional (how many records per month)
+#     ) |>
+#     ungroup() |>
+#     # optional: create a proper first-of-month date
+#     mutate(month_date = as.Date(sprintf("%04d-%02d-01", year, month))
+#            )
 ```
 
 ### Add elevation
@@ -623,41 +598,41 @@ df_cool_month <- df_cool |>
 Compare cooling accross elevations. Add elevation for each poly_id based on the mean elevation value from forest and open land
 
 ```{r}
-
-# load the points data and convert it to a dataframe
-df_pts <- vect(here("00_data", "data_selection", "pairs_32617.shp")) |>
-  as.data.frame()
-
-# set the landcover as a factor, as now it is just a code (10 and 30)
-df_pts$landcover <- factor(
-  df_pts$landcover,
-  levels = c(10, 30),
-  labels = c("forest", "open_land")
-)
-
-df_pts
-
-# calculate the mean elevation for each poly_id
-poly_elv <- df_pts |>
-  pivot_wider(
-    id_cols = poly_id,
-    names_from = landcover,
-    values_from = elv
-   )|>
-  mutate(
-    poly_elv = (open_land + forest)/2
-  )
-
-poly_elv
-
-# Join the table containing the elevation for each polygon with the table containing the cooling values
-df_cool_month <- df_cool_month |>
-  left_join(
-    poly_elv |> select(poly_id, poly_elv),
-    by = "poly_id"
-  )
-
-df_cool_month
+# 
+# # load the points data and convert it to a dataframe
+# df_pts <- vect(here("00_data", "data_selection", "pairs_32617.shp")) |>
+#   as.data.frame()
+# 
+# # set the landcover as a factor, as now it is just a code (10 and 30)
+# df_pts$landcover <- factor(
+#   df_pts$landcover,
+#   levels = c(10, 30),
+#   labels = c("forest", "open_land")
+# )
+# 
+# df_pts
+# 
+# # calculate the mean elevation for each poly_id
+# poly_elv <- df_pts |>
+#   pivot_wider(
+#     id_cols = poly_id,
+#     names_from = landcover,
+#     values_from = elv
+#    )|>
+#   mutate(
+#     poly_elv = (open_land + forest)/2
+#   )
+# 
+# poly_elv
+# 
+# # Join the table containing the elevation for each polygon with the table containing the cooling values
+# df_cool_month <- df_cool_month |>
+#   left_join(
+#     poly_elv |> select(poly_id, poly_elv),
+#     by = "poly_id"
+#   )
+# 
+# df_cool_month
 ```
 
 ```{r}
@@ -665,26 +640,57 @@ df_cool_month
 # write_csv(df_cool_month, here("04_output", "df_cool_month.csv"))
 ```
 
-### Hottest months
+# Cooling v2
+
+## Find hottest date
+
+```{r}
+# # apply function monthly_lst() to get the monthly value for each point
+# monthly <- monthly_lst(df)
+# monthly
+# 
+# # Save the monthly table for fast reuse
+# write_csv(monthly, here("04_output", "monthly_lst.csv"))
+# 
+# # print the hottest months for open land according to the lst data
+# hottest_months <- monthly |>
+#   filter(landcover == "open_land") |>
+#   group_by(year) |>
+#   slice_max(lst_monthly_mean, n = 1, with_ties = FALSE) |>
+#   ungroup()
+# 
+# hottest_months
+# # # results
+# # landcover  year month lst_monthly_mean n_points month_date
+# # open_land  2021     4             19.5     1216 2021-04-01
+# # open_land  2022     3             20.1     1280 2022-03-01
+# # open_land  2023     4             21.0     1226 2023-04-01
+# # open_land  2024     4             22.3     1216 2024-04-01
+# 
+```
+
+```{r}
+print("hello")
+```
 
 ```{r}
 
-# df_cool_month <- read_csv(here("04_output", "df_cool_month.csv"))
-
-
-
-# filter to include only the hottest months (based on monthly lst for open land)
-df_cool_hot_month <- df_cool_month |>
-  filter(
-    (year == 2021 & month == 4) |
-    (year == 2022 & month == 3) |
-    (year == 2023 & month == 5) |
-    (year == 2024 & month == 4)
-  )
-
-df_cool_hot_month$year <- factor(df_cool_hot_month$year)
-
-df_cool_hot_month
+# df_cool_month <- read_csv(here("00_data", "processed", "lst_cooling_pairs_monthly.csv"))
+# 
+# 
+# 
+# # filter to include only the hottest months (based on monthly lst for open land)
+# df_cool_hot_month <- df_cool_month |>
+#   filter(
+#     (year == 2021 & month == 3) |
+#     (year == 2022 & month == 2) |
+#     (year == 2023 & month == 2) |
+#     (year == 2024 & month == 3)
+#   )
+# 
+# df_cool_hot_month$year <- factor(df_cool_hot_month$year)
+# 
+# df_cool_hot_month
 ```
 
 ### Plot the data using boxplots
@@ -692,173 +698,214 @@ df_cool_hot_month
 ```{r}
 # Libraries
 
-library(hrbrthemes)
-library(viridis)
-
-
-df_cool_hot_month |>
-  ggplot( aes(x = factor(year), y=cooling_monthly_mean, fill=factor(year))) +
-    geom_boxplot() +
-    scale_fill_viridis_d( alpha=0.6) +
-  scale_y_continuous(breaks = seq(floor(min(df_cool_month$cooling_monthly_mean, na.rm = TRUE)),
-                                ceiling(max(df_cool_month$cooling_monthly_mean, na.rm = TRUE)),
-                                by = 2)) +
-    geom_jitter(color="black", size=0.4, alpha=0.9) +
-    theme_ipsum() +
-    theme(
-      legend.position="none",
-      plot.title = element_text(size=11)
-    ) +
-  xlab("")+
-  ylab("Forest cooling (°C)")
+# library(hrbrthemes)
+# library(viridis)
+# 
+# 
+# df_cool_hot_month |>
+#   ggplot( aes(x = factor(year), y=cooling_monthly_mean, fill=factor(year))) +
+#     geom_boxplot() +
+#     scale_fill_viridis_d( alpha=0.6) +
+#   scale_y_continuous(breaks = seq(floor(min(df_cool_month$cooling_monthly_mean, na.rm = TRUE)),
+#                                 ceiling(max(df_cool_month$cooling_monthly_mean, na.rm = TRUE)),
+#                                 by = 2)) +
+#     geom_jitter(color="black", size=0.4, alpha=0.9) +
+#     theme_ipsum() +
+#     theme(
+#       legend.position="none",
+#       plot.title = element_text(size=11)
+#     ) +
+#   xlab("")+
+#   ylab("Forest cooling (°C)")
 ```
 
 ```{r}
 
 library(ggstatsplot)
 
-# test and plot the difference between the reference years
-df_cool_reference_years <- df_cool_month |>
+df_cool_month <- read_csv(here("00_data", "processed", "lst_cooling_pairs_monthly.csv"))
+
+
+
+# filter to include only the hottest months (based on monthly air temp)
+hottest_month_tair <- df_cool_month |>
   filter(
-    (year == 2021 & month == 4) |
+    (year == 2021 & month == 3) |
+    (year == 2022 & month == 2) |
+    (year == 2023 & month == 2) |
+    (year == 2024 & month == 3)
+  ) |>
+  mutate(year = factor(year))
+
+
+hottest_month_tair
+
+# filter to include only the hottest months (based on monthly solar radiation)
+hottest_month_rad <- df_cool_month |>
+  filter(
+    (year == 2021 & month == 3) |
     (year == 2022 & month == 3) |
-    (year == 2023 & month == 5)
-#     (year == 2024 & month == 4)
-  )
-df_cool_reference_years$year <- factor(df_cool_reference_years$year)
+    (year == 2023 & month == 4) |
+    (year == 2024 & month == 3)
+  ) |>
+  mutate(year = factor(year))
 
+
+
+
+# filter to include only the hottest months (based on min precipitation)
+hottest_month_precip <- df_cool_month |>
+  filter(
+    (year == 2021 & month == 3) |
+    (year == 2022 & month == 1) |
+    (year == 2023 & month == 2) |
+    (year == 2024 & month == 1)
+  ) |>
+  mutate(year = factor(year))
+
+
+
+# plot dif for hottest month Tair
 ggbetweenstats(
-  data = df_cool_reference_years,
+  data = hottest_month_tair,
   x = year, 
-  y=cooling_monthly_mean,
-  alternative = "two.sided"
-  
-)
-
-p <- ggbetweenstats(
-  data = df_cool_hot_month,
-  x = year, 
-  y=cooling_monthly_mean,
+  y=cooling,
   bf.message = FALSE,
   results.subtitle = FALSE,
-  pairwise.display = "none"
   
 )
 
-p
+# plot dif for hottest month rad
+ggbetweenstats(
+  data = hottest_month_rad,
+  x = year, 
+  y=cooling,
+  bf.message = FALSE,
+  results.subtitle = FALSE,
+  
+)
 
+# plot dif for hottest month precip
+ggbetweenstats(
+  data = hottest_month_precip,
+  x = year, 
+  y=cooling,
+  bf.message = FALSE,
+  results.subtitle = FALSE,
+  
+)
 ```
 
 ### Plot cooling time-series: Mean across all pairs
 
-```{r}
-
-plot_forest_cooling <- function(df, elev_range) {
-  
-df<-df_cool
-
-
-ggplot(df_cool, aes(x = date, y = forest_cooling)
-    )+
-    geom_jitter(size = 0.5, alpha = 0.25
-    )+
-    geom_smooth(method = "loess",        # "loess" for local smoothing
-                span = 0.1,              # adjust smoothness (0-1)
-                se = FALSE,
-                fill = "#4e4f52",
-                linewidth = 0.8,
-                color = 'black'
-    )+
-   geom_smooth(method=lm, color = 'darkred'
-    )+
-    geom_hline(
-      yintercept = 0, 
-      color = "#4e4f52", 
-      linetype = "dashed", 
-      linewidth = 0.8
-    )+
-    scale_y_continuous(
-      limits = c(-2.5, 10), 
-      breaks = seq(-2.5, 10, by = 2.5)
-      )+
-    annotate("rect", xmin = as.Date("2023-11-01"), xmax = as.Date("2024-04-01"), ymin = -Inf, ymax = Inf, alpha = .2
-    )+
-    labs(
-      x = "Date",
-      y = "Forest Cooling (°C)",
-      title = paste("Forest induced cooling at",elev_range, "m")
-    )+
-  theme_minimal()
-}
-
-plot_forest_cooling(df,"0-1800m")
+```{# {r}
+# 
+# plot_forest_cooling <- function(df, elev_range) {
+#   
+# df<-df_cool
+# 
+# 
+# ggplot(df_cool, aes(x = date, y = forest_cooling)
+#     )+
+#     geom_jitter(size = 0.5, alpha = 0.25
+#     )+
+#     geom_smooth(method = "loess",        # "loess" for local smoothing
+#                 span = 0.1,              # adjust smoothness (0-1)
+#                 se = FALSE,
+#                 fill = "#4e4f52",
+#                 linewidth = 0.8,
+#                 color = 'black'
+#     )+
+#    geom_smooth(method=lm, color = 'darkred'
+#     )+
+#     geom_hline(
+#       yintercept = 0, 
+#       color = "#4e4f52", 
+#       linetype = "dashed", 
+#       linewidth = 0.8
+#     )+
+#     scale_y_continuous(
+#       limits = c(-2.5, 10), 
+#       breaks = seq(-2.5, 10, by = 2.5)
+#       )+
+#     annotate("rect", xmin = as.Date("2023-11-01"), xmax = as.Date("2024-04-01"), ymin = -Inf, ymax = Inf, alpha = .2
+#     )+
+#     labs(
+#       x = "Date",
+#       y = "Forest Cooling (°C)",
+#       title = paste("Forest induced cooling at",elev_range, "m")
+#     )+
+#   theme_minimal()
+# }
+# 
+# plot_forest_cooling(df,"0-1800m")
     
 ```
 
 ### Plot cooling: For each pair
 
-```{r}
-
-plot_forest_cooling_pairs <- function(df, elev_range){ 
-  df<-df_cool
-
-  ggplot(df_cool, aes(x = date, y = forest_cooling)
-    )+
-    geom_jitter(size = 0.5, alpha = 0.25
-    )+
-    geom_smooth(method = "loess",        # "loess" for local smoothing
-                  span = 0.1,              # adjust smoothness (0-1)
-                  se = FALSE,
-                  fill = "#4e4f52",
-                  linewidth = 0.8,
-                color = 'black'
-    )+
-    geom_smooth(method=lm, color = 'darkred'
-    )+
-    geom_hline(
-      yintercept = 0, 
-      color = "#4e4f52", 
-      linetype = "dashed", 
-      linewidth = 0.8) +
-      annotate("rect", xmin = as.Date("2023-11-01"), xmax = as.Date("2024-04-01"), ymin = -Inf, ymax = Inf, alpha = .2
-    )+
-    scale_y_continuous(
-      limits = c(-2.5, 10), 
-      breaks = seq(-2.5, 10, by = 2.5)
-    )+
-    labs(
-      x = "Date",
-      y = "Forest Cooling (°C)",
-      title = paste("Forest induced cooling at",elev_range, "m")
-    )+
-    facet_wrap(~poly_id, ncol = 5
-    )+
-    theme_bw()
-  }
-
-facet_cool <- plot_forest_cooling_pairs(df,"0-1800m")
-
-ggsave(
-  "facet_cool.png",
-    facet_cool,
-    width = 250,
-    height = 900,
-    units = "mm"
-)
+```{# {r}
+# 
+# plot_forest_cooling_pairs <- function(df, elev_range){ 
+#   df<-df_cool
+# 
+#   ggplot(df_cool, aes(x = date, y = forest_cooling)
+#     )+
+#     geom_jitter(size = 0.5, alpha = 0.25
+#     )+
+#     geom_smooth(method = "loess",        # "loess" for local smoothing
+#                   span = 0.1,              # adjust smoothness (0-1)
+#                   se = FALSE,
+#                   fill = "#4e4f52",
+#                   linewidth = 0.8,
+#                 color = 'black'
+#     )+
+#     geom_smooth(method=lm, color = 'darkred'
+#     )+
+#     geom_hline(
+#       yintercept = 0, 
+#       color = "#4e4f52", 
+#       linetype = "dashed", 
+#       linewidth = 0.8) +
+#       annotate("rect", xmin = as.Date("2023-11-01"), xmax = as.Date("2024-04-01"), ymin = -Inf, ymax = Inf, alpha = .2
+#     )+
+#     scale_y_continuous(
+#       limits = c(-2.5, 10), 
+#       breaks = seq(-2.5, 10, by = 2.5)
+#     )+
+#     labs(
+#       x = "Date",
+#       y = "Forest Cooling (°C)",
+#       title = paste("Forest induced cooling at",elev_range, "m")
+#     )+
+#     facet_wrap(~poly_id, ncol = 5
+#     )+
+#     theme_bw()
+#   }
+# 
+# facet_cool <- plot_forest_cooling_pairs(df,"0-1800m")
+# 
+# ggsave(
+#   "facet_cool.png",
+#     facet_cool,
+#     width = 250,
+#     height = 900,
+#     units = "mm"
+# )
 ```
 
 ### Plot the data - elevation
 
 ```{r}
-p4 <- ggplot(df_cool_month, aes(x=poly_elv, y=cooling_monthly_mean)) +
+p4 <- ggplot(hottest_month_tair, aes(x=elv_mean, y=cooling)) +
 
   geom_point() +
 
   geom_smooth(method=lm ,formula = y ~ poly(x, 2), color="red", fill="#69b3a2", se=TRUE) +
 
-  scale_y_continuous(breaks = seq(floor(min(df_cool_month$cooling_monthly_mean, na.rm = TRUE)),
+  scale_y_continuous(breaks = seq(floor(min(hottest_month_tair$cooling, na.rm = TRUE)),
 
-                                ceiling(max(df_cool_month$cooling_monthly_mean, na.rm = TRUE)),
+                                ceiling(max(hottest_month_tair$cooling, na.rm = TRUE)),
 
                                 by = 2))+
 
@@ -871,11 +918,11 @@ p4
 
 ```{r}
 # linear trend + confidence interval
-p3 <- ggplot(df_cool_month, aes(x=poly_elv, y=cooling_monthly_mean)) +
+p3 <- ggplot(hottest_month_tair, aes(x=elv_mean, y=cooling)) +
   geom_point() +
   geom_smooth(method=lm , color="red", fill="#69b3a2", se=TRUE) +
-  scale_y_continuous(breaks = seq(floor(min(df_cool_month$cooling_monthly_mean, na.rm = TRUE)),
-                                ceiling(max(df_cool_month$cooling_monthly_mean, na.rm = TRUE)),
+  scale_y_continuous(breaks = seq(floor(min(hottest_month_tair$cooling, na.rm = TRUE)),
+                                ceiling(max(hottest_month_tair$cooling, na.rm = TRUE)),
                                 by = 2))+
     labs(
       x = "Elevation (m)",
@@ -886,11 +933,11 @@ p3 <- ggplot(df_cool_month, aes(x=poly_elv, y=cooling_monthly_mean)) +
 
 p3
 # Non linear - polynomial
-p4 <- ggplot(df_cool_month, aes(x=poly_elv, y=cooling_monthly_mean)) +
+p4 <- ggplot(hottest_month_tair, aes(x=elv_mean, y=cooling)) +
   geom_point() +
   geom_smooth(method=lm ,formula = y ~ poly(x, 2), color="red", fill="#69b3a2", se=TRUE) +
-  scale_y_continuous(breaks = seq(floor(min(df_cool_month$cooling_monthly_mean, na.rm = TRUE)),
-                                ceiling(max(df_cool_month$cooling_monthly_mean, na.rm = TRUE)),
+  scale_y_continuous(breaks = seq(floor(min(hottest_month_tair$cooling, na.rm = TRUE)),
+                                ceiling(max(hottest_month_tair$cooling, na.rm = TRUE)),
                                 by = 2))+
   labs(
       x = "Elevation (m)",
@@ -902,11 +949,11 @@ p4 <- ggplot(df_cool_month, aes(x=poly_elv, y=cooling_monthly_mean)) +
 p4
 
 # Non linear - loess
-p4 <- ggplot(df_cool_month, aes(x=poly_elv, y=cooling_monthly_mean)) +
+p4 <- ggplot(hottest_month_tair, aes(x=elv_mean, y=cooling)) +
   geom_point() +
   geom_smooth(method=loess, color="red", fill="#69b3a2", se=TRUE) +
-  scale_y_continuous(breaks = seq(floor(min(df_cool_month$cooling_monthly_mean, na.rm = TRUE)),
-                                ceiling(max(df_cool_month$cooling_monthly_mean, na.rm = TRUE)),
+  scale_y_continuous(breaks = seq(floor(min(hottest_month_tair$cooling, na.rm = TRUE)),
+                                ceiling(max(hottest_month_tair$cooling, na.rm = TRUE)),
                                 by = 2))+
     labs(
       x = "Elevation (m)",
@@ -924,10 +971,10 @@ p4
 
 ```{r}
 # First: reshape your data into paired format for 2021 and 2024 comparison
-df_wide <- df_cool_hot_month |>
+df_wide <- hottest_month_tair |>
   filter(year %in% c(2021, 2022, 2023, 2024)) |>
-  select(poly_id, year, cooling_monthly_mean,poly_elv) |>
-  pivot_wider(names_from = year, values_from = cooling_monthly_mean)
+  select(poly_id, year, cooling,elv_mean) |>
+  pivot_wider(names_from = year, values_from = cooling)
 
 df_wide
 
@@ -964,16 +1011,16 @@ H1: μ2024−μ2021\>0
 
 Results Paired t-test ( alternative hypothesis: true mean difference is greater than 0)
 
-df_wide\$\`2024\` and df_wide\$\`2021\` t = 6.8282, df = 63, **p-value = 1.989e-09 95** percent confidence interval: 0.977999 Inf sample estimates: mean difference **1.294483**
+df_wide\$\`2024\` and df_wide\$\`2021\` t = 6.1645, df = 63, **p-value = 2.781e-08** 95 percent confidence interval: 0.7999085 Inf \| sample estimates: mean difference **1.096978**
 
-df_wide\$\`2024\` and df_wide\$\`2022\` t = 3.64, df = 63, **p-value = 0.0002759** 95 percent confidence interval: 0.3734572 Inf sample estimates: mean difference **0.6898357**
+data: df_wide\$\`2024\` and df_wide\$`2022` t = 8.3698, df = 63, **p-value = 4.03e-12** alternative hypothesis: true mean difference is greater than 0 95 percent confidence interval: 1.199686 Inf \| sample estimates: mean difference **1.498586**
 
-df_wide\$\`2024\` and df_wide\$\`2023\` t = 6.1926, df = 63, **p-value = 2.49e-08** 95 percent confidence interval: 0.9026265 Inf sample estimates: mean difference **1.235767**
+data: df_wide\$\`2024\` and df_wide\$`2023` t = 6.721, df = 63, **p-value = 3.054e-09** alternative hypothesis: true mean difference is greater than 0 95 percent confidence interval: 0.9396064 Inf sample estimates: mean difference **1.250118**
 
 **Adjusted p-values with Holm:**
 
 ```         
-5.968224e-09 2.759406e-04 4.980577e-08
+2.781018e-08 1.209015e-11 6.108294e-09
 ```
 
 ```{r}
@@ -1006,43 +1053,42 @@ p.adjust(p, method = "holm", n = length(p))
 ```{r}
 
 # test and plot the difference between the reference years
-df_cool_reference_years <- df_cool_month |>
+df_cool_reference_years <- hottest_month_tair |>
   filter(
-    (year == 2021 & month == 4) |
-    (year == 2022 & month == 3) |
-    (year == 2023 & month == 5)
+    (year == 2021) |
+    (year == 2022) |
+    (year == 2023)
 #     (year == 2024 & month == 4)
   )
-df_cool_reference_years$year <- factor(df_cool_reference_years$year)
 
 # Welch's one-way ANOVA
 oneway.test(
-  cooling_monthly_mean ~ year,
+  cooling ~ year,
   data =df_cool_reference_years,
   var.equal = FALSE
 )
 
-# -------------------------------
-# Test the reference years also using pairwise comparisons
-# Run the paired t-test in R
-test4 <- t.test(df_wide$`2021`, df_wide$`2022`,
-       paired = TRUE,
-       alternative = "two.sided")
-
-# Run the paired t-test in R
-test5 <- t.test(df_wide$`2022`, df_wide$`2023`,
-       paired = TRUE,
-       alternative = "two.sided")
-
-# Run the paired t-test in R
-test6 <- t.test(df_wide$`2021`, df_wide$`2023`,
-       paired = TRUE,
-       alternative = "two.sided")
-
-# Bind the p values all together to perform multiple testing
-p_ref <- c(test4$p.value, test5$p.value, test6$p.value)
-
-# perform multiple testing with Bonferony Holm
-p.adjust(p_ref, method = "holm", n = length(p_ref))
+# # -------------------------------
+# # Test the reference years also using pairwise comparisons
+# # Run the paired t-test in R
+# test4 <- t.test(df_wide$`2021`, df_wide$`2022`,
+#        paired = TRUE,
+#        alternative = "two.sided")
+# 
+# # Run the paired t-test in R
+# test5 <- t.test(df_wide$`2022`, df_wide$`2023`,
+#        paired = TRUE,
+#        alternative = "two.sided")
+# 
+# # Run the paired t-test in R
+# test6 <- t.test(df_wide$`2021`, df_wide$`2023`,
+#        paired = TRUE,
+#        alternative = "two.sided")
+# 
+# # Bind the p values all together to perform multiple testing
+# p_ref <- c(test4$p.value, test5$p.value, test6$p.value)
+# 
+# # perform multiple testing with Bonferony Holm
+# p.adjust(p_ref, method = "holm", n = length(p_ref))
 
 ```

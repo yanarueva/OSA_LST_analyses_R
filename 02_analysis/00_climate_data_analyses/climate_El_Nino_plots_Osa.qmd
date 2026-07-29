@@ -2,7 +2,7 @@
 title: "pairs_timeseries"
 format: html
 editor_options: 
-  chunk_output_type: inline
+  chunk_output_type: console
 ---
 
 source("functions.R")
@@ -14,6 +14,12 @@ library(terra)
 library(dplyr)
 library(here)
 source(here("01_functions","functions.R"))
+
+# for correlation analyses
+library(car)
+library(GGally)
+library(ggplot2)
+
 ```
 
 # RONI index
@@ -60,30 +66,27 @@ ggplot(roni, aes(date,roni))+
   
 ```
 
-# T-air and Precipitation
+# Climate data
 
 ```{r}
+# ERA 5 Tair at 2m at 13:30 and 01:30 solar time
 temp <- read_csv(here("00_data","processed", "t2m_1330_0130_solar_time.csv"))
 temp
 
+# Total Precipitation - monthly mean
 precip <- read_csv(here("00_data","processed", "monthly_total_precip.csv"))
 precip
+
+# Surface short-wave (solar) radiation downwards at 13:30 solar time (ssrd taken for the hour before)
+ssrd <- read_csv(here("00_data","processed", "ssrd_1330_solar_time.csv"))
+ssrd
+
 ```
 
 # LST data
 
 ```{r}
-monthly_lst <- read_csv((here("04_output","monthly_lst.csv")))
-monthly_lst<- monthly_lst |>
-  pivot_wider(
-    id_cols = c(month_date),
-    names_from = landcover,
-    values_from = lst_monthly_mean
-  ) |>
-  mutate (
-    mean_lst = (forest + open_land)/2,
-    date = month_date
-  ) 
+monthly_lst <- read_csv(here("00_data", "processed", "lst_cooling_monthly_mean.csv"))
 
 monthly_lst
 ```
@@ -94,10 +97,13 @@ monthly_lst
 # join with the roni table
 full <- roni |>
   full_join(temp, by = "date") |>
-  full_join(monthly_lst, by = "date") |>
-  full_join(precip, by = "date")
+  full_join(monthly_lst, by = join_by("date" == "month_date")) |>
+  full_join(precip, by = "date") |>
+  full_join(ssrd, by = "date")
 
 full
+
+write_csv(full, here("04_output", "lst_and_climate_var_monthly_mean.csv"))
 ```
 
 ## Plot join
@@ -106,7 +112,7 @@ full
 # First restructure the data
 df_long <- full |>
   pivot_longer(
-    cols = c(roni, t1330, mean_lst, precipitation_mm),
+    cols = c(precipitation_mm, roni, ssrd_Wm2_1330, t1330, lst_mean, cooling),
     names_to = "variable",
     values_to = "value"
   )
@@ -114,15 +120,18 @@ df_long <- full |>
 # Factor the variables, to define the order they will appear in the plot
 df_long$variable <- factor(
   df_long$variable,
-  levels = c("precipitation_mm", "roni", "t1330", "mean_lst")
+  levels = c("precipitation_mm", "roni", "ssrd_Wm2_1330", "t1330", "lst_mean", "cooling")
 )
 
-# # Change the names for the plot
-# df_long$variable <- recode(df_long$variable,
-#                            temperature = "Air Temperature (°C)",
-#                            roni = "Relative Oceanic Niño Index (°C)",
-#                            precipitation = "Precipitation (mm)",
-#                            mean_lst = "Land Surface Temperature (°C)")
+# Change the names for the plot
+df_long$variable <- recode(df_long$variable,
+                           t1330 = "Air Temperature (°C)", #at 13:30 local solar time
+                           roni = "Relative Oceanic Niño Index (°C)",
+                           precipitation_mm = "Precipitation (mm)",
+                           lst_mean = "Land Surface Temperature (°C)", #at 13:30 local solar time
+                           ssrd_Wm2_1330 = "Downward short-wave solar radiation (W m⁻²)", #at 13:30 local solar time
+                           cooling = "Forest-induced cooling (°C)")
+
 
 # Then plot with facet wrap
 ggplot(df_long, aes(date, value)) +
@@ -137,21 +146,143 @@ ggplot(df_long, aes(date, value)) +
   facet_wrap(~ variable, scales = "free_y", ncol = 1)
 ```
 
+## Hottest months
+
 ```{r}
-# ggplot(roni, aes(date,roni))+
-#   geom_point() +
-#   scale_x_date(
-#     date_labels = "%b %Y",
-#     date_breaks = "3 months",
-#     date_minor_breaks = "1 month"
-#     ) + 
-#     annotate("rect", xmin = as.Date("2023-06-01"), xmax = as.Date("2024-05-01"), ymin = -Inf, ymax = Inf,         alpha = .2
-#     ) +
-#     annotate("text", x = as.Date("2024-06-01"), y = 1.5, label = "El Niño"
-#     ) +
-#     labs(
-#       x = "Date", 
-#       y = "Relative Oceanic Niño Index (°C)") +
-#     theme(axis.text.x=element_text(angle=45, hjust=1)) 
+full <- read_csv(here("04_output", "lst_and_climate_var_monthly_mean.csv"))
+
+# print the hottest months for open land according to the lst data
+hottest <- full |>
+  group_by(year)
+
+hottest |> slice_max(t1330, n = 1, with_ties = FALSE) #results 03, 02, 02, 03
+
+hottest |> slice_max(lst_mean, n = 1, with_ties = FALSE) #results 04, 03, 04, 03
+
+hottest |> slice_max(ssrd_Wm2_1330, n = 1, with_ties = FALSE) #results 03, 03, 04, 03
+
+hottest |> slice_max(cooling, n = 1, with_ties = FALSE) #results 04, 04, 03, 04
+
+hottest |> slice_min(precipitation_mm, n = 1, with_ties = FALSE) #results 03, 01, 02, 01
+
+full |>
+  filter(
+    year == 2021 & month == 12
+  ) |> select (precipitation_mm)
+
+hottest |> 
+  arrange(precipitation_mm) |>
+  slice_head(n=3) |>
+  select(date, precipitation_mm) |>
+  filter(year != 2020)
   
+```
+
+## Corellation
+
+```{r}
+df <- read_csv(here("04_output", "lst_and_climate_var_monthly_mean.csv"))
+
+pairs(df[, c("cooling",
+             "lst_mean",
+             "t1330",
+             "precipitation_mm",
+             "ssrd_Wm2_1330")])
+
+cor(df[, c("cooling",
+           "lst_mean",
+           "t1330",
+           "precipitation_mm",
+           "ssrd_Wm2_1330")],
+    use = "complete.obs")
+```
+
+```{r}
+
+# standardize predictors
+df <- df |>
+  mutate(
+    temp_z = scale(t1330),
+    precip_z = scale(precipitation_mm),
+    radiation_z = scale(ssrd_Wm2_1330)
+  )
+
+pairs(df[, c("cooling",
+             "lst_mean",
+             "t1330",
+             "precipitation_mm",
+             "ssrd_Wm2_1330")])
+
+cor(df[, c("cooling",
+           "lst_mean",
+           "t1330",
+           "precipitation_mm",
+           "ssrd_Wm2_1330")],
+    use = "complete.obs")
+```
+
+```{r}
+
+model_full <- lm(
+  cooling ~ temp_z + precip_z + radiation_z,
+  data = df
+)
+
+summary(model_full)
+```
+
+```{r}
+
+vif(model_full)
+
+```
+
+```{r}
+#renaming the columns for readability
+# names(df)[names(df) == "cooling"] <- "forest_cooling"
+names(df)[names(df) == "lst_mean"] <- "lst"
+names(df)[names(df) == "t1330"] <- "air_temp"
+names(df)[names(df) == "precipitation_mm"] <- "precipitation"
+names(df)[names(df) == "ssrd_Wm2_1330"] <- "solar_radiation"
+
+# Create a group variable
+df$period <- ifelse(df$date >= "2023-03-01" & df$date <= "2024-04-30",
+                    "El Niño period",
+                    "Other months")
+
+ggpairs(
+  df,
+  columns = c("air_temp",
+              "solar_radiation",
+              "precipitation",
+              "lst",
+              "cooling"),
+  diag = list(
+    continuous = wrap("densityDiag", alpha = 0.4)
+  ),
+  upper = list(
+    continuous = wrap("cor", size = 3)
+  ),
+  aes(color = period, shape = period),
+  progress = FALSE
+)
+
+# check for lst of open land and lst of forest
+ggpairs(
+  df,
+  columns = c("air_temp",
+              "solar_radiation",
+              "precipitation",
+              "forest",
+              "open_land",
+              "cooling"),
+  diag = list(
+    continuous = wrap("densityDiag", alpha = 0.4)
+  ),
+  upper = list(
+    continuous = wrap("cor", size = 3)
+  ),
+  aes(color = period, shape = period),
+  progress = FALSE
+)
 ```

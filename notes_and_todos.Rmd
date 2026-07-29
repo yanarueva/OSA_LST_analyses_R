@@ -1,0 +1,30 @@
+---
+title: "notes_and_todos"
+output: html_document
+---
+
+-   [ ] doy needed for data cleaning?
+
+-   [ ] cooling df
+
+    -   [ ] full time series and monthly
+
+        -   [ ] forest lst
+
+        -   [ ] open land lst
+
+        -   [ ] cooling lst
+
+        -   [ ] elv
+
+-   [ ] stats
+
+    -   [ ] cooling over hottest monnths (with monthly df) El Nino vs reference years
+
+        -   [ ] air temp El Nino vs reference years
+
+        -   [ ] precip El Nino vs reference years
+
+        -   [ ] solar radiation El Nino vs reference years
+
+    -   [ ] cooling over hottest LST data ?

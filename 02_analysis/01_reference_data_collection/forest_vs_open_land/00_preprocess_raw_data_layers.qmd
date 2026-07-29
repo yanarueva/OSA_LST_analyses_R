@@ -6,12 +6,22 @@ format: html
 # Prepossessing of raw input data
 
 ```{r}
+# for spatial layers and era5 data
 library(terra)
 library(ggplot2)
 library(dplyr)
 library(here)
 library(stringr)
 library(readr)
+
+# for LST data cleaning
+library(lubridate)
+library(tidyverse)
+library(terra)
+library(dplyr)
+library(scales)
+
+source(here("01_functions", "functions.R"))
 ```
 
 ## Spatial Layers projections and extent
@@ -79,7 +89,7 @@ writeVector(
 # the canopy height has been downloaded in tiles from Planet explorer and mosaiced in QGIS with EPSG:32617 projection
 ```
 
-## ERA5 2m air temperature 
+## ERA5 2m air temperature
 
 ```{r}
 # country boundaries
@@ -97,9 +107,7 @@ plot(base[3,])
 b_union <- terra::union(base[1,],base[3,]) 
 b_union <- terra::aggregate(b_union, fun = "mean", dissolve = TRUE)
 
-
 plot(b_union) 
-
 
 ocean <- erase(base[2,], b_union)
 plot(ocean)
@@ -127,6 +135,13 @@ mask[mask == 0] <- NA
 plot (mask)
 plot(aoi, add = TRUE)
 
+# --------------------------
+# #write a tif file for visualization later
+# writeRaster(
+#   mask,
+#   here("00_data", "vis_layers", "aoi_mask_era5.tif"),
+#   overwrite = TRUE
+# )
 # ---------------------------
 era5_masked <- era5*mask
 plot(era5_masked[[1]])
@@ -205,7 +220,7 @@ climate
 write_csv(climate, here("00_data","processed", "t2m_1330_0130_solar_time.csv"), append = FALSE)
 ```
 
-## ERA5 precipitation data 
+## ERA5 precipitation data
 
 -\> we have downloaded the hourly data and are manually merging it together, because of an official issue reported on the Copernicus portal
 
@@ -248,4 +263,200 @@ monthly_tp <- monthly_tp |>
 
 # Save the monthly table for fast reuse
 write_csv(monthly_tp, here("00_data","processed", "monthly_total_precip.csv"), append = FALSE)
+```
+
+## ERA5 solar incoming
+
+Surface solar radiation downwards (J m^-2^ ) - Amount of solar radiation (also known as shortwave radiation) reaching the surface of the Earth.
+
+```{r}
+mask <- rast(here("00_data", "vis_layers", "aoi_mask_era5.tif"))
+plot(mask)
+r <- rast(here("00_data", "99_temp", "era5_solar_radiation_1900UTC_1330solar.nc"))
+r <- project(r, "EPSG:32617", method = "near") 
+  # remove pixels outside the aoi, using the precreated mask
+r <- r*mask
+
+plot(r[[1]])
+names(r)
+time(r)
+
+ssrd_1330_mean <- global(r, "mean", na.rm = TRUE)
+
+ssrd_1330_mean
+# ------------------------------------
+
+# join in a tibble
+ssrd <- tibble(
+  # date = as.Date(time(temp)),
+  ssrd_Jm2_1330 = (ssrd_1330_mean[, 1]), #devided by 3600 to convert Jm2 to Wm2 for one hour of observation
+  band_ssrd_1330 = names(r),
+  # n_month = as.numeric(str_extract(names(t1300), "\\d+$"))
+  ) |> 
+  # arrange(n_month) |>
+  mutate(
+    date = seq(
+      as.Date("2020-01-01"),
+      by = "month",
+      length.out = n()
+    ),
+    ssrd_Wm2_1330 = ssrd_Jm2_1330/3600 #devided by 3600 to convert Jm2 to Wm2 for one hour of observation
+  )
+
+ssrd
+
+# -------------------------------
+ssrd <- ssrd |>
+    filter(
+    date >= as.Date("2020-10-01"), 
+    date < as.Date("2024-11-01")
+  ) |>
+  select(c("date", "ssrd_Jm2_1330", "ssrd_Wm2_1330"))
+
+ssrd
+#!!!! Note ssrd values seem waj too big for an hour. Check later, nevertheless the relationship is linear, so the pattern should still show on
+
+# Save the monthly table for fast reuse
+write_csv(ssrd, here("00_data","processed", "ssrd_1330_solar_time.csv"), append = FALSE)
+```
+
+## LST data
+
+```{r}
+# Read into a tiblle
+csv <- read_csv(here("00_data", "raw", "pairs_timeseries_results.csv"))
+
+# Clean and better formate the raw data
+df <- clean_lst_data(csv)
+df |>
+  filter(
+    is.na(lst)
+  )
+
+#[] doy needed
+```
+
+```{r}
+
+# Calculate the cooling for each pair (with identical poly_id) throughout the study period. Cooling is expressed as the LST difference between open land and forest.
+df_cool <- df |>
+  pivot_wider(
+    id_cols = c(poly_id, date),
+    names_from = landcover,
+    values_from = lst,
+    unused_fn = list(elv = mean)
+  ) |>
+  mutate(
+    cooling = open_land - forest, #NOTE! cooling is usealy expressed in negative terms as fores - open land. Here we calculate it in positive terms as this helps in the following analyses and stat tests 
+    lst_mean = (open_land + forest) /2,
+    elv_mean = elv
+  ) |>
+  select(
+    poly_id,
+    date,
+    forest,
+    open_land,
+    lst_mean,
+    cooling,
+    elv_mean,
+  ) |>
+  tidyr::drop_na(cooling) #remove rows where there are NA values due to misisng open land or forest lst
+
+df_cool
+
+# Save the monthly table for fast reuse
+# write_csv(df_cool, here("00_data", "processed", "lst_cooling_pairs_daily.csv"), append = FALSE)
+
+```
+
+```{r}
+
+# check if elevation is the same for all poly_ids (should be the same)
+df_cool |>
+    mutate(
+      year  = year(date),
+      month = month(date)
+    ) |>
+    group_by(poly_id, year, month) |>
+    summarise(n_elv = n_distinct(elv_mean)) |>
+    filter(n_elv > 1)
+
+```
+
+```{r}
+#Monthly calculations
+
+# calculate the monthly cooling for each pair
+monthly <- df_cool |>
+    mutate(
+      year  = year(date),
+      month = month(date)
+    ) |>
+    group_by(poly_id, year, month) |>
+    summarise(
+      forest = mean(forest, na.rm = TRUE),
+      open_land = mean(open_land, na.rm = TRUE),
+      lst_mean = mean(lst_mean, na.rm = TRUE),
+      cooling = mean(cooling, na.rm = TRUE),
+      elv_mean = unique(elv_mean), #get the elv value, there should be a unique value for each poly id. If not an error will come back
+      n_points = n()    # optional (how many records per month)
+    ) |>
+    ungroup() |>
+    # optional: create a proper first-of-month date
+    mutate(month_date = as.Date(sprintf("%04d-%02d-01", year, month)))
+
+
+monthly
+
+
+# Save the monthly table for fast reuse
+# write_csv(monthly, here("00_data", "processed", "lst_cooling_pairs_monthly.csv"), append = FALSE)
+
+monthly <- read_csv(here("00_data", "processed", "lst_cooling_pairs_monthly.csv"))
+monthly
+```
+
+```{r}
+#calculate the monthly mean accross all pairs
+monthly_mean <- monthly |>
+    group_by(year, month) |>
+    summarise(
+      forest = mean(forest, na.rm = TRUE),
+      open_land = mean(open_land, na.rm = TRUE),
+      lst_mean = mean(lst_mean, na.rm = TRUE),
+      cooling = mean(cooling, na.rm = TRUE),
+      n_points = n()    # optional (how many records per month)
+    ) |>
+    ungroup() |>
+  mutate(month_date = as.Date(sprintf("%04d-%02d-01", year, month)))
+
+monthly_mean
+
+# Save the monthly table for fast reuse
+write_csv(monthly_mean, here("00_data", "processed", "lst_cooling_monthly_mean.csv"))
+```
+
+```{r}
+
+# print the hottest months for open land according to the lst data
+hottest_months <- monthly_mean |>
+  group_by(year) |>
+  slice_max(lst_mean, n = 1, with_ties = FALSE) |>
+  ungroup()
+
+hottest_months
+#v2
+# year  month forest open land lst mean cooling   n_points
+# 2021	4	15.20531	19.47772	17.34152	4.272408	64
+# 2022	3	15.24137	20.11842	17.67990	4.877056	64
+# 2023	4	16.16014	21.06052	18.61033	4.900375	64
+# 2024	3	17.25689	22.24100	19.74895	4.984114	64
+
+# v1
+# # results
+# landcover  year month lst_monthly_mean n_points month_date
+# open_land  2021     4             19.5     1216 2021-04-01
+# open_land  2022     3             20.1     1280 2022-03-01
+# open_land  2023     4             21.0     1226 2023-04-01
+# open_land  2024     4             22.3     1216 2024-04-01
 ```

@@ -37,13 +37,11 @@ clean_lst_data <- function(df) {
     ) |> 
     mutate(
       date = as.Date(date, format = "%Y-%m-%d"),
-      # day of year
-      doy = as.integer(strftime(date, "%j")),
       # Convert Kelvin to Celcius
       lst = lst - 273.15,
       landcover = factor(landcover, labels = c("forest", "open_land"))
     ) |>
-    select(c(date, doy, poly_id, landcover, lst, elv)) |>
+    select(c(date, poly_id, landcover, lst, elv)) |>
     filter(date >= as.Date("2020-10-01")) 
 }
 
