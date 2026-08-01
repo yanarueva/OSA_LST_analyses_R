@@ -32,8 +32,35 @@
 
     [] cor for open land, forest and cooling for the hottest months
 
+## Desk notes
+[] coupling between LST and 
+    - Tair
+    - Precip
+    is stronger in forests than in poen land? ( different than Li et al. 2015)
+[]  Li et al. 2015
+    -2.41 +- 0.10 C annual average
+    Rueva et al 2026
+    -4.76 --> warmest months
+    ? --> annual average
+    ?--> coldest month
+    + ---> highest precip
+    + ---> lowest precip
+
+    regression for Tair and cooling, colour El Nino
+    refression for precip and cooling, colour El Nino
+    3D Tair vs Tlst vs precip
+    
+[] LST of forests is more independent than lst of open land to climate variable --> due to water infiltration and recycling capabilites
+[] impact on gloabl warming on agriculture and pastures
+[] I don't use clear sky cond only, which is a limitation in previous studies, as LST could be lower during clear sky (Li et al 2015)
+[] UTC = local solar time - (long/15) =
+    = 13:30 - (-83.2/15) = ~19:00 UTC (day) and ~07:00 UTC (night)
+
+## Workflow
+
 
 ## Notes meeting with Chris 28.07.2026
-[] YR to write Shean and Amy for processing units
+[not needed] YR to write Shean and Amy for processing units
 [?] forest cooling with climate variables --> should we dig into it?
-[] LST dat for night time
+[x] LST dat for night time --> actually daytime
+

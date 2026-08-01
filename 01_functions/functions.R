@@ -29,8 +29,9 @@ plot_raw<- function (df, elev_range) {
 }
 
 # -------------------------------------------------------------------
-clean_lst_data <- function(df) {
-  df |>
+
+clean_lst_data <- function(path) {
+  read_csv(path) |>
     rename(
       date = interval_from,
       lst = LST_B0_mean
@@ -45,8 +46,34 @@ clean_lst_data <- function(df) {
     filter(date >= as.Date("2020-10-01")) 
 }
 
+# ----------------------------------------------------------------
+# Calculate the cooling for each pair (with identical poly_id) throughout the study period. Cooling is expressed as the LST difference between open land and forest.
+cooling <- function(df) {
+  df |>
+  pivot_wider(
+    id_cols = c(poly_id, date),
+    names_from = landcover,
+    values_from = lst,
+    unused_fn = list(elv = mean)
+  ) |>
+  mutate(
+    cooling = open_land - forest, #NOTE! cooling is usealy expressed in negative terms as fores - open land. Here we calculate it in positive terms as this helps in the following analyses and stat tests 
+    lst_mean = (open_land + forest) /2,
+    elv_mean = elv
+  ) |>
+  select(
+    poly_id,
+    date,
+    forest,
+    open_land,
+    lst_mean,
+    cooling,
+    elv_mean,
+  ) |>
+  tidyr::drop_na(cooling) #remove rows where there are NA values due to misisng open land or forest lst
+}
 
-# -----------------------------------------------------------------
+  # -----------------------------------------------------------------
 plot_monthly <- function(df, elev_range) {
   
   p <- ggplot(

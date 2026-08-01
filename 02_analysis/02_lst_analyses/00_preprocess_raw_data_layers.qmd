@@ -323,56 +323,37 @@ write_csv(ssrd, here("00_data","processed", "ssrd_1330_solar_time.csv"), append 
 ## LST data
 
 ```{r}
-# Read into a tiblle
-csv <- read_csv(here("00_data", "raw", "pairs_timeseries_results.csv"))
+## LST data
+  
+df01 <- clean_lst_data(here("00_data", "raw", "pairs_timeseries_results_0130.csv"))
+df01
 
-# Clean and better formate the raw data
-df <- clean_lst_data(csv)
-df |>
-  filter(
-    is.na(lst)
-  )
+df13 <- clean_lst_data(here("00_data", "raw", "pairs_timeseries_results_1330.csv"))
+df13
 
-#[] doy needed
 ```
 
 ```{r}
 
 # Calculate the cooling for each pair (with identical poly_id) throughout the study period. Cooling is expressed as the LST difference between open land and forest.
-df_cool <- df |>
-  pivot_wider(
-    id_cols = c(poly_id, date),
-    names_from = landcover,
-    values_from = lst,
-    unused_fn = list(elv = mean)
-  ) |>
-  mutate(
-    cooling = open_land - forest, #NOTE! cooling is usealy expressed in negative terms as fores - open land. Here we calculate it in positive terms as this helps in the following analyses and stat tests 
-    lst_mean = (open_land + forest) /2,
-    elv_mean = elv
-  ) |>
-  select(
-    poly_id,
-    date,
-    forest,
-    open_land,
-    lst_mean,
-    cooling,
-    elv_mean,
-  ) |>
-  tidyr::drop_na(cooling) #remove rows where there are NA values due to misisng open land or forest lst
+df13_cool <- cooling(df13)
+df13_cool
 
-df_cool
+df01_cool <- cooling(df01)
+df01_cool
 
-# Save the monthly table for fast reuse
-# write_csv(df_cool, here("00_data", "processed", "lst_cooling_pairs_daily.csv"), append = FALSE)
+# # Save the monthly table for fast reuse
+# write_csv(df13_cool, here("00_data", "processed", "lst_cooling_pairs_daily_1330.csv"), append = FALSE)
+# 
+# write_csv(df01_cool, here("00_data", "processed", "lst_cooling_pairs_daily_0130.csv"), append = FALSE)
 
 ```
 
 ```{r}
 
 # check if elevation is the same for all poly_ids (should be the same)
-df_cool |>
+check_elv <- function(df) {
+  df|>
     mutate(
       year  = year(date),
       month = month(date)
@@ -380,14 +361,18 @@ df_cool |>
     group_by(poly_id, year, month) |>
     summarise(n_elv = n_distinct(elv_mean)) |>
     filter(n_elv > 1)
+}
 
+check_elv(df13_cool)
+check_elv(df01_cool)
 ```
 
 ```{r}
 #Monthly calculations
 
 # calculate the monthly cooling for each pair
-monthly <- df_cool |>
+cooling_pair_monthly <- function (df_cool) {
+  df_cool |>
     mutate(
       year  = year(date),
       month = month(date)
@@ -404,21 +389,27 @@ monthly <- df_cool |>
     ungroup() |>
     # optional: create a proper first-of-month date
     mutate(month_date = as.Date(sprintf("%04d-%02d-01", year, month)))
+}
+
+monthly13_pairs <- cooling_pair_monthly(df13_cool)
+monthly13_pairs
+monthly01_pairs <- cooling_pair_monthly(df01_cool)
+monthly01_pairs
+
+# # Save the monthly table for fast reuse
+# write_csv(monthly13_pairs, here("00_data", "processed", "lst_cooling_pairs_monthly_1330.csv"), append = FALSE)
+# 
+# write_csv(monthly01_pairs, here("00_data", "processed", "lst_cooling_pairs_monthly_0130.csv"), append = FALSE)
 
 
-monthly
+monthly01_pairs <- read_csv(here("00_data", "processed", "lst_cooling_pairs_monthly_0130.csv"))
 
-
-# Save the monthly table for fast reuse
-# write_csv(monthly, here("00_data", "processed", "lst_cooling_pairs_monthly.csv"), append = FALSE)
-
-monthly <- read_csv(here("00_data", "processed", "lst_cooling_pairs_monthly.csv"))
-monthly
 ```
 
 ```{r}
 #calculate the monthly mean accross all pairs
-monthly_mean <- monthly |>
+cooling_mean_monthly <- function (monthly_pairs) {
+   monthly_pairs |>
     group_by(year, month) |>
     summarise(
       forest = mean(forest, na.rm = TRUE),
@@ -429,34 +420,42 @@ monthly_mean <- monthly |>
     ) |>
     ungroup() |>
   mutate(month_date = as.Date(sprintf("%04d-%02d-01", year, month)))
+}
 
-monthly_mean
+monthly01_mean <- cooling_mean_monthly(monthly01_pairs)
+monthly01_mean
+monthly13_mean <- cooling_mean_monthly(monthly13_pairs)
+monthly13_mean
 
 # Save the monthly table for fast reuse
-write_csv(monthly_mean, here("00_data", "processed", "lst_cooling_monthly_mean.csv"))
+write_csv(monthly01_mean, here("00_data", "processed", "lst_cooling_monthly_mean_0130.csv"))
+
+write_csv(monthly13_mean, here("00_data", "processed", "lst_cooling_monthly_mean_1330.csv"))
+
 ```
 
 ```{r}
 
 # print the hottest months for open land according to the lst data
-hottest_months <- monthly_mean |>
+hottest_months <- monthly13_mean |>
   group_by(year) |>
   slice_max(lst_mean, n = 1, with_ties = FALSE) |>
   ungroup()
 
 hottest_months
-#v2
+
+#1330
+# year  month forest open land lst mean cooling   n_points
+# 2021	3	28.77358	33.87539	31.32448	5.101806	64	
+# 2022	2	29.63851	34.58259	32.11055	4.944076	64
+# 2023	2	30.94451	36.23678	33.59065	5.292268	64	
+# 2024	3	31.63097	38.71252	35.17174	7.081551	64	
+
+#0130
 # year  month forest open land lst mean cooling   n_points
 # 2021	4	15.20531	19.47772	17.34152	4.272408	64
 # 2022	3	15.24137	20.11842	17.67990	4.877056	64
 # 2023	4	16.16014	21.06052	18.61033	4.900375	64
 # 2024	3	17.25689	22.24100	19.74895	4.984114	64
 
-# v1
-# # results
-# landcover  year month lst_monthly_mean n_points month_date
-# open_land  2021     4             19.5     1216 2021-04-01
-# open_land  2022     3             20.1     1280 2022-03-01
-# open_land  2023     4             21.0     1226 2023-04-01
-# open_land  2024     4             22.3     1216 2024-04-01
 ```

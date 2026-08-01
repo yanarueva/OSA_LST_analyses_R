@@ -109,10 +109,14 @@ write_csv(full, here("04_output", "lst_and_climate_var_monthly_mean.csv"))
 ## Plot join
 
 ```{r}
+
+full <- read_csv(here("04_output", "lst_and_climate_var_monthly_mean.csv"))
+
 # First restructure the data
 df_long <- full |>
   pivot_longer(
-    cols = c(precipitation_mm, roni, ssrd_Wm2_1330, t1330, lst_mean, cooling),
+    # cols = c(precipitation_mm, roni, ssrd_Wm2_1330, t1330, lst_mean, cooling),
+    cols = c(precipitation_mm, roni, ssrd_Wm2_1330, t0130, lst_mean, cooling),
     names_to = "variable",
     values_to = "value"
   )
@@ -120,16 +124,19 @@ df_long <- full |>
 # Factor the variables, to define the order they will appear in the plot
 df_long$variable <- factor(
   df_long$variable,
-  levels = c("precipitation_mm", "roni", "ssrd_Wm2_1330", "t1330", "lst_mean", "cooling")
+  # levels = c("precipitation_mm", "roni", "ssrd_Wm2_1330", "t1330", "lst_mean", "cooling")
+  levels = c("precipitation_mm", "roni", "ssrd_Wm2_1330", "t0130", "lst_mean", "cooling")
 )
 
 # Change the names for the plot
 df_long$variable <- recode(df_long$variable,
-                           t1330 = "Air Temperature (°C)", #at 13:30 local solar time
+                           # t1330 = "Air Temperature (°C)", #at 13:30 local solar time
+                           t0130 = "Air Temperature (°C)", #at 01:30 local solar time
                            roni = "Relative Oceanic Niño Index (°C)",
                            precipitation_mm = "Precipitation (mm)",
                            lst_mean = "Land Surface Temperature (°C)", #at 13:30 local solar time
                            ssrd_Wm2_1330 = "Downward short-wave solar radiation (W m⁻²)", #at 13:30 local solar time
+                        
                            cooling = "Forest-induced cooling (°C)")
 
 

@@ -720,15 +720,26 @@ print("hello")
 ```
 
 ```{r}
-
+library(dplyr)
+library(readr)
+library(here)
 library(ggstatsplot)
 
-df_cool_month <- read_csv(here("00_data", "processed", "lst_cooling_pairs_monthly.csv"))
+monthly13_pairs <- read_csv(here("00_data", "processed", "lst_cooling_pairs_monthly_1330.csv"))
 
-
+monthly01_pairs <- read_csv(here("00_data", "processed", "lst_cooling_pairs_monthly_0130.csv"))
 
 # filter to include only the hottest months (based on monthly air temp)
-hottest_month_tair <- df_cool_month |>
+hottest_month_tair_01 <- monthly01_pairs |>
+  filter(
+    (year == 2021 & month == 3) |
+    (year == 2022 & month == 2) |
+    (year == 2023 & month == 2) |
+    (year == 2024 & month == 3)
+  ) |>
+  mutate(year = factor(year))
+
+hottest_month_tair_13 <- monthly13_pairs |>
   filter(
     (year == 2021 & month == 3) |
     (year == 2022 & month == 2) |
@@ -738,109 +749,95 @@ hottest_month_tair <- df_cool_month |>
   mutate(year = factor(year))
 
 
-hottest_month_tair
-
-# filter to include only the hottest months (based on monthly solar radiation)
-hottest_month_rad <- df_cool_month |>
-  filter(
-    (year == 2021 & month == 3) |
-    (year == 2022 & month == 3) |
-    (year == 2023 & month == 4) |
-    (year == 2024 & month == 3)
-  ) |>
-  mutate(year = factor(year))
-
-
-
-
-# filter to include only the hottest months (based on min precipitation)
-hottest_month_precip <- df_cool_month |>
-  filter(
-    (year == 2021 & month == 3) |
-    (year == 2022 & month == 1) |
-    (year == 2023 & month == 2) |
-    (year == 2024 & month == 1)
-  ) |>
-  mutate(year = factor(year))
-
-
 
 # plot dif for hottest month Tair
 ggbetweenstats(
-  data = hottest_month_tair,
+  data = hottest_month_tair_13,
   x = year, 
   y=cooling,
   bf.message = FALSE,
-  results.subtitle = FALSE,
-  
+  results.subtitle = FALSE
 )
+```
 
-# plot dif for hottest month rad
-ggbetweenstats(
-  data = hottest_month_rad,
-  x = year, 
-  y=cooling,
-  bf.message = FALSE,
-  results.subtitle = FALSE,
-  
-)
-
-# plot dif for hottest month precip
-ggbetweenstats(
-  data = hottest_month_precip,
-  x = year, 
-  y=cooling,
-  bf.message = FALSE,
-  results.subtitle = FALSE,
-  
-)
+```{r}
+# For comparison with precipitation and solar as well
+# library(ggstatsplot)
+# 
+# df_cool_month <- read_csv(here("00_data", "processed", "lst_cooling_pairs_monthly.csv"))
+# 
+# 
+# 
+# # filter to include only the hottest months (based on monthly air temp)
+# hottest_month_tair <- df_cool_month |>
+#   filter(
+#     (year == 2021 & month == 3) |
+#     (year == 2022 & month == 2) |
+#     (year == 2023 & month == 2) |
+#     (year == 2024 & month == 3)
+#   ) |>
+#   mutate(year = factor(year))
+# 
+# hottest_month_tair
+# #--------------------------------------------------------------
+# # filter to include only the hottest months (based on monthly solar radiation)
+# hottest_month_rad <- df_cool_month |>
+#   filter(
+#     (year == 2021 & month == 3) |
+#     (year == 2022 & month == 3) |
+#     (year == 2023 & month == 4) |
+#     (year == 2024 & month == 3)
+#   ) |>
+#   mutate(year = factor(year))#--------------------------------------------------------------
+# # filter to include only the hottest months (based on min precipitation)
+# hottest_month_precip <- df_cool_month |>
+#   filter(
+#     (year == 2021 & month == 3) |
+#     (year == 2022 & month == 1) |
+#     (year == 2023 & month == 2) |
+#     (year == 2024 & month == 1)
+#   ) |>
+#   mutate(year = factor(year))
+# 
+# 
+# 
+# # plot dif for hottest month Tair
+# ggbetweenstats(
+#   data = hottest_month_tair,
+#   x = year, 
+#   y=cooling,
+#   bf.message = FALSE,
+#   results.subtitle = FALSE,
+#   
+# )
+# #--------------------------------------------------------------
+# # plot dif for hottest month rad
+# ggbetweenstats(
+#   data = hottest_month_rad,
+#   x = year, 
+#   y=cooling,
+#   bf.message = FALSE,
+#   results.subtitle = FALSE,
+#   
+# )
+# 
+# # plot dif for hottest month precip
+# ggbetweenstats(
+#   data = hottest_month_precip,
+#   x = year, 
+#   y=cooling,
+#   bf.message = FALSE,
+#   results.subtitle = FALSE,
+#   
+# )
 ```
 
 ### Plot cooling time-series: Mean across all pairs
 
-```{# {r}
-# 
-# plot_forest_cooling <- function(df, elev_range) {
-#   
-# df<-df_cool
-# 
-# 
-# ggplot(df_cool, aes(x = date, y = forest_cooling)
-#     )+
-#     geom_jitter(size = 0.5, alpha = 0.25
-#     )+
-#     geom_smooth(method = "loess",        # "loess" for local smoothing
-#                 span = 0.1,              # adjust smoothness (0-1)
-#                 se = FALSE,
-#                 fill = "#4e4f52",
-#                 linewidth = 0.8,
-#                 color = 'black'
-#     )+
-#    geom_smooth(method=lm, color = 'darkred'
-#     )+
-#     geom_hline(
-#       yintercept = 0, 
-#       color = "#4e4f52", 
-#       linetype = "dashed", 
-#       linewidth = 0.8
-#     )+
-#     scale_y_continuous(
-#       limits = c(-2.5, 10), 
-#       breaks = seq(-2.5, 10, by = 2.5)
-#       )+
-#     annotate("rect", xmin = as.Date("2023-11-01"), xmax = as.Date("2024-04-01"), ymin = -Inf, ymax = Inf, alpha = .2
-#     )+
-#     labs(
-#       x = "Date",
-#       y = "Forest Cooling (°C)",
-#       title = paste("Forest induced cooling at",elev_range, "m")
-#     )+
-#   theme_minimal()
-# }
-# 
-# plot_forest_cooling(df,"0-1800m")
-    
-```
+\`\`\`{# {r} \# \# plot_forest_cooling \<- function(df, elev_range) { \#\
+\# df\<-df_cool \# \# \# ggplot(df_cool, aes(x = date, y = forest_cooling) \# )+ \# geom_jitter(size = 0.5, alpha = 0.25 \# )+ \# geom_smooth(method = "loess", \# "loess" for local smoothing \# span = 0.1, \# adjust smoothness (0-1) \# se = FALSE, \# fill = "#4e4f52", \# linewidth = 0.8, \# color = 'black' \# )+ \# geom_smooth(method=lm, color = 'darkred' \# )+ \# geom_hline( \# yintercept = 0, \# color = "#4e4f52", \# linetype = "dashed", \# linewidth = 0.8 \# )+ \# scale_y_continuous( \# limits = c(-2.5, 10), \# breaks = seq(-2.5, 10, by = 2.5) \# )+ \# annotate("rect", xmin = as.Date("2023-11-01"), xmax = as.Date("2024-04-01"), ymin = -Inf, ymax = Inf, alpha = .2 \# )+ \# labs( \# x = "Date", \# y = "Forest Cooling (°C)", \# title = paste("Forest induced cooling at",elev_range, "m") \# )+ \# theme_minimal() \# } \# \# plot_forest_cooling(df,"0-1800m")
+
+```         
 
 ### Plot cooling: For each pair
 
@@ -971,21 +968,29 @@ p4
 
 ```{r}
 # First: reshape your data into paired format for 2021 and 2024 comparison
-df_wide <- hottest_month_tair |>
+df01_wide <- hottest_month_tair_01 |>
   filter(year %in% c(2021, 2022, 2023, 2024)) |>
   select(poly_id, year, cooling,elv_mean) |>
   pivot_wider(names_from = year, values_from = cooling)
 
-df_wide
+df01_wide
+
+#--------------------------------------
+df13_wide <- hottest_month_tair_13 |>
+  filter(year %in% c(2021, 2022, 2023, 2024)) |>
+  select(poly_id, year, cooling,elv_mean) |>
+  pivot_wider(names_from = year, values_from = cooling)
+
+df13_wide
 
 # write_csv(df_wide, "df_wide.csv")
 
 # Quick sanity check
-df_wide_test <- df_wide |>
+df01_wide_test <- df_wide |>
   mutate(diff = `2024` - `2021`)
 
-summary(df_wide_test$diff)
-hist(df_wide_test$diff)
+summary(df01_wide_test$diff)
+hist(df01_wide_test$diff)
 
 # !!!! difference distribution seems slightly skewed. Check what to do in this case
 
@@ -1024,18 +1029,19 @@ data: df_wide\$\`2024\` and df_wide\$`2023` t = 6.721, df = 63, **p-value = 3.05
 ```
 
 ```{r}
+library(tidyverse)
 # Run the paired t-test in R
-test1 <- t.test(df_wide$`2024`, df_wide$`2021`,
+test1 <- t.test(df_wide01$`2024`, df_wide01$`2021`,
        paired = TRUE,
        alternative = "greater")
 
 # Run the paired t-test in R
-test2 <- t.test(df_wide$`2024`, df_wide$`2022`,
+test2 <- t.test(df_wide01$`2024`, df_wide01$`2022`,
        paired = TRUE,
        alternative = "greater")
 
 # Run the paired t-test in R
-test3 <- t.test(df_wide$`2024`, df_wide$`2023`,
+test3 <- t.test(df_wide01$`2024`, df_wide01$`2023`,
        paired = TRUE,
        alternative = "greater")
 test1
