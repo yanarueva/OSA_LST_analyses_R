@@ -1,5 +1,11 @@
-[] doy needed for data cleaning?
-
+## for next time
+[] run stats for one-side hypothesis and write them in the table
+[] clean lst analyses code, too many unused cells
+    [x] or create a new workbook for forest cooling only
+[] run multiplle regression with the new data
+[] check stat for forest and open land (H is that forest will have no difference, while open land will have)
+ 
+## 27.06.2026
 [x] cooling df
     [x] full time series and 
         [x] forest lst
@@ -57,7 +63,10 @@
     = 13:30 - (-83.2/15) = ~19:00 UTC (day) and ~07:00 UTC (night)
 
 ## Workflow
-
+1. 00_preprocess
+    - read raw csv
+    - clean data (formatting and renaming columns)
+    [] join lst 0130 and lst 1330
 
 ## Notes meeting with Chris 28.07.2026
 [not needed] YR to write Shean and Amy for processing units

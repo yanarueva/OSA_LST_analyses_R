@@ -834,14 +834,14 @@ ggbetweenstats(
 
 ### Plot cooling time-series: Mean across all pairs
 
-\`\`\`{# {r} \# \# plot_forest_cooling \<- function(df, elev_range) { \#\
-\# df\<-df_cool \# \# \# ggplot(df_cool, aes(x = date, y = forest_cooling) \# )+ \# geom_jitter(size = 0.5, alpha = 0.25 \# )+ \# geom_smooth(method = "loess", \# "loess" for local smoothing \# span = 0.1, \# adjust smoothness (0-1) \# se = FALSE, \# fill = "#4e4f52", \# linewidth = 0.8, \# color = 'black' \# )+ \# geom_smooth(method=lm, color = 'darkred' \# )+ \# geom_hline( \# yintercept = 0, \# color = "#4e4f52", \# linetype = "dashed", \# linewidth = 0.8 \# )+ \# scale_y_continuous( \# limits = c(-2.5, 10), \# breaks = seq(-2.5, 10, by = 2.5) \# )+ \# annotate("rect", xmin = as.Date("2023-11-01"), xmax = as.Date("2024-04-01"), ymin = -Inf, ymax = Inf, alpha = .2 \# )+ \# labs( \# x = "Date", \# y = "Forest Cooling (°C)", \# title = paste("Forest induced cooling at",elev_range, "m") \# )+ \# theme_minimal() \# } \# \# plot_forest_cooling(df,"0-1800m")
+```{r}
+# # plot_forest_cooling <- function(df, elev_range) { ## df<-df_cool # # # ggplot(df_cool, aes(x = date, y = forest_cooling) # )+ # geom_jitter(size = 0.5, alpha = 0.25 # )+ # geom_smooth(method = "loess", # "loess" for local smoothing # span = 0.1, # adjust smoothness (0-1) # se = FALSE, # fill = "#4e4f52", # linewidth = 0.8, # color = 'black' # )+ # geom_smooth(method=lm, color = 'darkred' # )+ # geom_hline( # yintercept = 0, # color = "#4e4f52", # linetype = "dashed", # linewidth = 0.8 # )+ # scale_y_continuous( # limits = c(-2.5, 10), # breaks = seq(-2.5, 10, by = 2.5) # )+ # annotate("rect", xmin = as.Date("2023-11-01"), xmax = as.Date("2024-04-01"), ymin = -Inf, ymax = Inf, alpha = .2 # )+ # labs( # x = "Date", # y = "Forest Cooling (°C)", # title = paste("Forest induced cooling at",elev_range, "m") # )+ # theme_minimal() # } # # plot_forest_cooling(df,"0-1800m")
+```
 
-```         
+```{r}
 
 ### Plot cooling: For each pair
 
-```{# {r}
 # 
 # plot_forest_cooling_pairs <- function(df, elev_range){ 
 #   df<-df_cool

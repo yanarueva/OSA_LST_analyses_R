@@ -1,0 +1,297 @@
+---
+title: "cooling"
+format: html
+editor_options: 
+  chunk_output_type: inline
+---
+
+# Load prerequisites
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(readr)
+library(here)
+library(ggstatsplot)
+library(ggplot2)
+library(hrbrthemes)
+
+monthly13_pairs <- read_csv(here("00_data", "processed", "lst_cooling_pairs_monthly_1330.csv"))
+
+monthly01_pairs <- read_csv(here("00_data", "processed", "lst_cooling_pairs_monthly_0130.csv"))
+
+
+# filter to include only the hottest months (based on monthly air temp)
+hottest_month_tair_01 <- monthly01_pairs |>
+  filter(
+    (year == 2021 & month == 3) |
+    (year == 2022 & month == 2) |
+    (year == 2023 & month == 2) |
+    (year == 2024 & month == 3)
+  ) |>
+  mutate(year = factor(year))
+
+hottest_month_tair_13 <- monthly13_pairs |>
+  filter(
+    (year == 2021 & month == 3) |
+    (year == 2022 & month == 2) |
+    (year == 2023 & month == 2) |
+    (year == 2024 & month == 3)
+  ) |>
+  mutate(year = factor(year))
+
+```
+
+# Plot Cooling ggbetweenstats
+
+```{r}
+
+# plot dif for hottest month Tair
+ggbetweenstats(
+  data = hottest_month_tair_13,
+  x = year, 
+  y=cooling,
+  bf.message = FALSE,
+  results.subtitle = FALSE
+) 
+
+ggbetweenstats(
+  data = hottest_month_tair_01,
+  x = year, 
+  y=cooling,
+  bf.message = FALSE,
+  results.subtitle = FALSE
+) 
+
+# compare forest and open land
+ggbetweenstats(
+  data = hottest_month_tair_13,
+  x = year, 
+  y=forest,
+  bf.message = FALSE,
+  results.subtitle = FALSE
+) 
+
+ggbetweenstats(
+  data = hottest_month_tair_13,
+  x = year, 
+  y=open_land,
+  bf.message = FALSE,
+  results.subtitle = FALSE
+) 
+```
+
+# Statistics
+
+### Prepare the data for the statistical tests
+
+#### Cooling
+
+```{r}
+# First: reshape your data into paired format for 2021 and 2024 comparison
+df01_wide <- hottest_month_tair_01 |>
+  select(poly_id, year, cooling,elv_mean) |>
+  pivot_wider(names_from = year, values_from = cooling)
+
+df01_wide
+
+
+#--------------------------------------
+df13_wide <- hottest_month_tair_13 |>
+  select(poly_id, year, cooling,elv_mean) |>
+  pivot_wider(names_from = year, values_from = cooling)
+
+df13_wide
+
+# write_csv(df_wide, "df_wide.csv")
+
+```
+
+```{r}
+# Quick sanity check
+df13_wide_test <- df13_wide |>
+  mutate(diff = `2024` - `2021`)
+
+summary(df13_wide_test$diff)
+hist(df13_wide_test$diff)
+
+# !!!! difference distribution seems slightly skewed. Check what to do in this case
+```
+
+#### Forest
+
+```{r}
+# First: reshape your data into paired format for 2021 and 2024 comparison
+df01_wide_forest <- hottest_month_tair_01 |>
+  select(poly_id, year, forest,elv_mean) |>
+  pivot_wider(names_from = year, values_from = forest)
+
+df01_wide_forest
+
+
+#--------------------------------------
+df13_wide_forest <- hottest_month_tair_13 |>
+  select(poly_id, year, forest,elv_mean) |>
+  pivot_wider(names_from = year, values_from = forest)
+
+df13_wide_forest
+
+```
+
+#### Open Land
+
+```{r}
+df13_wide_open_land <- hottest_month_tair_13 |>
+  select(poly_id, year, open_land,elv_mean) |>
+  pivot_wider(names_from = year, values_from = open_land)
+
+df13_wide_open_land
+
+```
+
+### Hypothesis (important)
+
+Because you *expect 2024 \> 2021*, this is a **one-sided paired test**.
+
+**Null hypothesis (H₀):**
+
+H0: μ2024−μ2021=0
+
+(no change in cooling )
+
+**Alternative hypothesis (H₁):**
+
+H1: μ2024−μ2021\>0
+
+(2024 is warmer on average)
+
+#### Compare El Nino year (2024) to all reference years (2021, 2022, 2023)
+
+```{r}
+
+df = df13_wide_open_land
+
+# library(tidyverse)
+# Run the paired t-test in R
+test1 <- t.test(df$`2024`, df$`2021`,
+       paired = TRUE,
+       alternative = "greater")
+
+# Run the paired t-test in R
+test2 <- t.test(df$`2024`, df$`2022`,
+       paired = TRUE,
+       alternative = "greater")
+
+# Run the paired t-test in R
+test3 <- t.test(df$`2024`, df$`2023`,
+       paired = TRUE,
+       alternative = "greater")
+test1
+test2
+test3
+# Bind the p values all together to perform multiple testing
+p <- c(test1$p.value, test2$p.value, test3$p.value)
+test1$p.value
+test2$p.value
+test3$p.value
+
+# perform multiple testing with Bonferony Holm
+p.adjust(p, method = "holm", n = length(p))
+```
+
+#### Compare all reference years (2021, 2022, 2023) among each other
+
+```{r}
+# test and plot the difference between the reference years
+df_cool_reference_years <- hottest_month_tair_13 |>
+  filter(
+    (year == 2021) |
+    (year == 2022) |
+    (year == 2023)
+#     (year == 2024 & month == 4)
+  )
+
+# Welch's one-way ANOVA
+oneway.test(
+  cooling ~ year,
+  data =df_cool_reference_years,
+  var.equal = FALSE
+)
+
+
+
+```
+
+# Plot elevations
+
+```{r}
+
+plot_cooling_vs_elevation <- function(df, method = "lm") {
+
+  # Determine smoothing method and formula
+  if (method == "poly") {
+    smooth_method <- "lm"
+    smooth_formula <- y ~ poly(x, 2)
+    plot_title <- "Polynomial model"
+  } else {
+    smooth_method <- method
+    smooth_formula <- NULL
+    plot_title <- switch(
+      method,
+      lm = "Linear model",
+      loess = "Loess model",
+      gam = "GAM model",
+      paste(toupper(method), "model")
+    )
+  }
+
+  p <- ggplot(df, aes(x = elv_mean, y = cooling)) +
+    geom_point() +
+    geom_smooth(
+      method = smooth_method,
+      formula = smooth_formula,
+      color = "red",
+      fill = "#69b3a2",
+      se = TRUE
+    ) +
+  scale_y_continuous(
+    limits = c(-2, 14),
+    breaks = seq(-2, 14, by = 2)
+  ) +
+    labs(
+      x = "Elevation (m)",
+      y = "Forest Cooling (°C)",
+      title = plot_title
+    ) +
+    facet_wrap(~year, ncol = 4) +
+    theme_ipsum()
+
+  return(p)
+}
+
+
+# Linear
+plot_cooling_vs_elevation(hottest_month_tair_13, "lm")
+
+# Polynomial (quadratic)
+plot_cooling_vs_elevation(hottest_month_tair_13, "poly")
+
+# Loess
+plot_cooling_vs_elevation(hottest_month_tair_13, "loess")
+
+# GAM (if desired)
+plot_cooling_vs_elevation(hottest_month_tair_13, "gam")
+
+#----------------------------------------
+# Linear
+# plot_cooling_vs_elevation(hottest_month_tair_01, "lm")
+# 
+# # Polynomial (quadratic)
+# plot_cooling_vs_elevation(hottest_month_tair_01, "poly")
+# 
+# # Loess
+# plot_cooling_vs_elevation(hottest_month_tair_01, "loess")
+# 
+# # GAM (if desired)
+# plot_cooling_vs_elevation(hottest_month_tair_01, "gam")
+```
