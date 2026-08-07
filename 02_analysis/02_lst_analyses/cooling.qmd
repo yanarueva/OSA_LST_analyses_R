@@ -169,7 +169,7 @@ H1: μ2024−μ2021\>0
 
 ```{r}
 
-df = df13_wide_open_land
+df = df13_wide
 
 # library(tidyverse)
 # Run the paired t-test in R
