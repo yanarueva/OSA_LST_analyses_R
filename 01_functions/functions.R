@@ -51,19 +51,20 @@ clean_lst_data <- function(path) {
 cooling <- function(df) {
   df |>
   pivot_wider(
-    id_cols = c(poly_id, date),
+    id_cols = c(poly_id, date, solar_time),
     names_from = landcover,
     values_from = lst,
     unused_fn = list(elv = mean)
   ) |>
   mutate(
-    cooling = forest - open_land, 
+    cooling =  forest - open_land, 
     lst_mean = (open_land + forest) /2,
     elv_mean = elv
   ) |>
   select(
     poly_id,
     date,
+    solar_time,
     forest,
     open_land,
     lst_mean,

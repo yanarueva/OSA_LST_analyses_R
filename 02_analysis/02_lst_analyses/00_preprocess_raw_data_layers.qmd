@@ -325,6 +325,8 @@ ssrd
 
 ## LST data
 
+### Load and combine daytime and nightime cooling
+
 ```{r}
 ## LST data
   
@@ -334,21 +336,59 @@ df01
 df13 <- clean_lst_data(here("00_data", "raw", "pairs_timeseries_results_1330.csv"))
 df13
 
+## Join the two tables and add time of day
+df <- bind_rows(
+  df01 |> mutate(solar_time = "01:30"),
+  df13 |> mutate(solar_time = "13:30")
+)
+df
+
 ```
+
+### Plot single pair
+
+```{r}
+#Plot single pair
+ggplot(df|> filter(poly_id == 37 & solar_time == "01:30"), aes(x = date, y = lst, color = landcover)
+  ) +
+    # geom_point(alpha = 0.4) +            # optional: show the raw points
+    geom_jitter(size = 1, alpha = 0.35) +
+    geom_smooth(method = "loess",        # "loess" for local smoothing
+                span = 0.15,              # adjust smoothness (0-1)
+                se = FALSE,
+                fill = "#4e4f52",
+                linewidth = 0.9) +               # display confidence interval
+    scale_colour_manual(
+      values = c("darkgreen", "sienna2")
+    ) +
+    scale_y_continuous(limits = c(5, 30), breaks = seq(5, 35, by = 5)
+    ) +
+    scale_x_date( date_breaks = "1 year",
+    date_minor_breaks = "1 month",
+    date_labels = "%Y")+
+    # scale_y_continuous(limits = c(5, 40), breaks = seq(5, 40, by = 5))+
+    annotate("rect", xmin = as.Date("2023-07-01"), xmax = as.Date("2024-03-01"), ymin = -Inf, ymax = Inf, alpha = .2
+    ) +
+    annotate("text", x = as.Date("2023-12-01"), y = 30, label = "El Niño"
+    ) +
+    labs(
+      x = "Date", 
+      y = "LST (°C)"
+    ) +
+    theme_bw()
+```
+
+### Cooling calculation
 
 ```{r}
 
-# Calculate the cooling for each pair (with identical poly_id) throughout the study period. Cooling is expressed as the LST difference between open land and forest.
-df13_cool <- cooling(df13)
-df13_cool
-
-df01_cool <- cooling(df01)
-df01_cool
+# Calculate the cooling for each pair (with identical poly_id) throughout the study period. Cooling is expressed as the LST difference between forest and open land.
+df_cool <- cooling(df)
+df_cool
 
 # # Save the monthly table for fast reuse
-# write_csv(df13_cool, here("00_data", "processed", "lst_cooling_pairs_daily_1330.csv"), append = FALSE)
+# write_csv(df_cool, here("00_data", "processed", "lst_cooling_pairs_daily.csv"), append = FALSE)
 # 
-# write_csv(df01_cool, here("00_data", "processed", "lst_cooling_pairs_daily_0130.csv"), append = FALSE)
 
 ```
 
@@ -366,13 +406,13 @@ check_elv <- function(df) {
     filter(n_elv > 1)
 }
 
-check_elv(df13_cool)
-check_elv(df01_cool)
+check_elv(df_cool)
 ```
 
 ```{r}
 #Monthly calculations
 
+# 
 # calculate the monthly cooling for each pair
 cooling_pair_monthly <- function (df_cool) {
   df_cool |>
@@ -380,7 +420,7 @@ cooling_pair_monthly <- function (df_cool) {
       year  = year(date),
       month = month(date)
     ) |>
-    group_by(poly_id, year, month) |>
+    group_by(poly_id, year, month, solar_time) |>
     summarise(
       forest = mean(forest, na.rm = TRUE),
       open_land = mean(open_land, na.rm = TRUE),
@@ -394,18 +434,13 @@ cooling_pair_monthly <- function (df_cool) {
     mutate(month_date = as.Date(sprintf("%04d-%02d-01", year, month)))
 }
 
-monthly13_pairs <- cooling_pair_monthly(df13_cool)
-monthly13_pairs
-monthly01_pairs <- cooling_pair_monthly(df01_cool)
-monthly01_pairs
-
-# # Save the monthly table for fast reuse
-# write_csv(monthly13_pairs, here("00_data", "processed", "lst_cooling_pairs_monthly_1330.csv"), append = FALSE)
-# 
-# write_csv(monthly01_pairs, here("00_data", "processed", "lst_cooling_pairs_monthly_0130.csv"), append = FALSE)
+monthly_pairs <- cooling_pair_monthly(df_cool)
+monthly_pairs
 
 
-monthly01_pairs <- read_csv(here("00_data", "processed", "lst_cooling_pairs_monthly_0130.csv"))
+# Save the monthly table for fast reuse
+# write_csv(monthly_pairs, here("00_data", "processed", "lst_cooling_pairs_monthly.csv"), append = FALSE)
+
 
 ```
 
@@ -413,7 +448,7 @@ monthly01_pairs <- read_csv(here("00_data", "processed", "lst_cooling_pairs_mont
 #calculate the monthly mean accross all pairs
 cooling_mean_monthly <- function (monthly_pairs) {
    monthly_pairs |>
-    group_by(year, month) |>
+    group_by(year, month, solar_time) |>
     summarise(
       forest = mean(forest, na.rm = TRUE),
       open_land = mean(open_land, na.rm = TRUE),
@@ -425,23 +460,20 @@ cooling_mean_monthly <- function (monthly_pairs) {
   mutate(month_date = as.Date(sprintf("%04d-%02d-01", year, month)))
 }
 
-monthly01_mean <- cooling_mean_monthly(monthly01_pairs)
-monthly01_mean
-monthly13_mean <- cooling_mean_monthly(monthly13_pairs)
-monthly13_mean
+monthly_mean <- cooling_mean_monthly(monthly_pairs)
+monthly_mean
 
+# 
 # Save the monthly table for fast reuse
-write_csv(monthly01_mean, here("00_data", "processed", "lst_cooling_monthly_mean_0130.csv"))
-
-write_csv(monthly13_mean, here("00_data", "processed", "lst_cooling_monthly_mean_1330.csv"))
+# write_csv(monthly_mean, here("00_data", "processed", "lst_cooling_monthly_mean.csv"))
 
 ```
 
 ```{r}
 
 # print the hottest months for open land according to the lst data
-hottest_months <- monthly13_mean |>
-  group_by(year) |>
+hottest_months <- monthly_mean |>
+  group_by(year, solar_time) |>
   slice_max(lst_mean, n = 1, with_ties = FALSE) |>
   ungroup()
 
