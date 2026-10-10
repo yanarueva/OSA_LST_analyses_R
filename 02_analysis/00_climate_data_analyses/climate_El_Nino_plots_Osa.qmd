@@ -2,7 +2,7 @@
 title: "pairs_timeseries"
 format: html
 editor_options: 
-  chunk_output_type: console
+  chunk_output_type: inline
 ---
 
 source("functions.R")
@@ -55,18 +55,27 @@ ggplot(roni, aes(date,roni))+
     date_breaks = "3 months",
     date_minor_breaks = "1 month"
     ) + 
-    annotate("rect", xmin = as.Date("2023-06-01"), xmax = as.Date("2024-05-01"), ymin = -Inf, ymax = Inf,         alpha = .2
+    annotate("rect", xmin = as.Date("2023-07-01"), xmax = as.Date("2024-02-01"), ymin = -Inf, ymax = Inf,         alpha = .2
     ) +
-    annotate("text", x = as.Date("2024-06-01"), y = 1.5, label = "El Niño"
+    annotate("text", x = as.Date("2024-07-01"), y = 1.5, label = "El Niño"
     ) +
     labs(
       x = "Date", 
       y = "Relative Oceanic Niño Index (°C)") +
     theme(axis.text.x=element_text(angle=45, hjust=1)) 
   
+
+#----------------------------------
+# filter rone above 0.5
+roni_05 <- roni |>
+  filter(roni >=0.5)
 ```
 
 # Climate data
+
+ssrd2 \<- read_csv(here("00_data","processed", "ssrd_0130_solar_time.csv"))
+
+ssrd2
 
 ```{r}
 # ERA 5 Tair at 2m at 13:30 and 01:30 solar time
@@ -86,9 +95,16 @@ ssrd
 # LST data
 
 ```{r}
-monthly_lst <- read_csv(here("00_data", "processed", "lst_cooling_monthly_mean_1330.csv"))
+monthly_lst_13 <- read_csv(here("00_data", "processed", "lst_cooling_monthly_mean_1330.csv"))
 
-monthly_lst
+monthly_lst_13$month_date <- as.Date(monthly_lst_13$month_date, format = "%m/%d/%Y")
+
+monthly_lst_01 <- read_csv(here("00_data", "processed", "lst_cooling_monthly_mean_0130.csv"))
+
+monthly_lst_01$month_date <- as.Date(monthly_lst_01$month_date, format = "%m/%d/%Y")
+
+monthly_lst_13
+monthly_lst_01
 ```
 
 # Join RONI and Climate data and LST
@@ -97,11 +113,13 @@ monthly_lst
 # join with the roni table
 full <- roni |>
   full_join(temp, by = "date") |>
-  full_join(monthly_lst, by = join_by("date" == "month_date")) |>
+  full_join(monthly_lst_13, by = join_by("date" == "month_date")) |>
+  full_join(monthly_lst_01, by = join_by("date" == "month_date")) |>
   full_join(precip, by = "date") |>
   full_join(ssrd, by = "date")
 
-full
+full <- full |>
+  select(!c("year.x","month.x","n_points.x","year.y","month.y","n_points.y"))
 
 write_csv(full, here("04_output", "lst_and_climate_var_monthly_mean.csv"))
 ```
@@ -117,7 +135,7 @@ df_long <- full |>
   # select(c(precipitation_mm, roni, ssrd_Wm2_1330, t1330, lst_mean, cooling)) |>
   pivot_longer(
     # cols = c(precipitation_mm, roni, ssrd_Wm2_1330, t1330, lst_mean, cooling),
-    cols = c(precipitation_mm, roni, ssrd_Wm2_1330, t1330, lst_mean, cooling),
+    cols = c(precipitation_mm, roni, ssrd_Wm2_1330, t1330, lst_mean_1330, cooling_1330),
     names_to = "variable",
     values_to = "value"
   )
@@ -127,7 +145,7 @@ df_long
 df_long$variable <- factor(
   df_long$variable,
   # levels = c("precipitation_mm", "roni", "ssrd_Wm2_1330", "t1330", "lst_mean", "cooling")
-  levels = c("precipitation_mm", "roni", "ssrd_Wm2_1330", "t1330", "lst_mean", "cooling")
+  levels = c("precipitation_mm", "roni", "ssrd_Wm2_1330", "t1330", "lst_mean_1330", "cooling_1330")
 )
 
 # Change the names for the plot
@@ -136,10 +154,10 @@ df_long$variable <- dplyr::recode(df_long$variable,
                            t1330 = "Air Temperature (°C)", #at 01:30 local solar time
                            roni = "Relative Oceanic Niño Index (°C)",
                            precipitation_mm = "Precipitation (mm)",
-                           lst_mean = "Land Surface Temperature (°C)", #at 13:30 local solar time
+                           lst_mean_1330 = "Land Surface Temperature (°C)", #at 13:30 local solar time
                            ssrd_Wm2_1330 = "Downward short-wave solar radiation (W m⁻²)", #at 13:30 local solar time
                         
-                           cooling = "Forest-induced cooling (°C)")
+                           cooling_1330 = "Forest-induced cooling (°C)")
 
 
 # Then plot with facet wrap
@@ -209,6 +227,150 @@ ggpairs(
 )
 
 
+```
+
+```{r}
+df <- read_csv(here("04_output", "lst_and_climate_var_monthly_mean.csv"))
+
+
+# Create a group variable
+df$period <- ifelse(df$date >= "2023-03-01" & df$date <= "2024-04-30",
+                    "El Niño period",
+                    "Other months")
+
+df_13 <- df |>
+  dplyr::rename(
+    `Air temperature (°C)` = t1330,
+    `Solar radiation (W m⁻²)` = ssrd_Wm2_1330,
+    `Precipitation (mm)` = precipitation_mm,
+    `Forest LST (°C)` = forest_1330,
+    `Open-land LST (°C)` = open_land_1330,
+    `Forest cooling (°C)` = cooling_1330
+  )
+
+df_01 <- df |>
+  dplyr::rename(
+    `Air temperature (°C)` = t0130,
+    # `Solar radiation (W m⁻²)` = ssrd_Wm2_0130,
+    `Precipitation (mm)` = precipitation_mm,
+    `Forest LST (°C)` = forest_0130,
+    `Open-land LST (°C)` = open_land_0130,
+    `Forest cooling (°C)` = cooling_0130
+  )
+
+cor_panel <- function(data, mapping, ...) {
+  
+  x <- eval_data_col(data, mapping$x)
+  y <- eval_data_col(data, mapping$y)
+  
+  r <- cor(x, y, use = "complete.obs")
+  
+  fit <- lm(y ~ x)
+  slope <- coef(fit)[2]
+  
+  # Use 3 decimals for small slopes, otherwise 2
+  slope_label <- if (abs(slope) < 0.01) {
+    sprintf("%.3f", slope)
+  } else {
+    sprintf("%.2f", slope)
+  }
+  
+  ggplot(data = data, mapping = mapping) +
+    
+    # ONE regression line using all observations
+    geom_smooth(
+      aes(group = 1),
+      method = "lm",
+      se = FALSE,
+      color = "black",
+      linewidth = 0.5,
+       alpha = 0.3
+    ) +
+    geom_point(size = 1.5) +
+    annotate(
+      "text",
+      x = mean(range(x, na.rm = TRUE)),
+      y = Inf,
+      label = paste0(
+        "r = ", sprintf("%.2f", r),
+        "; b = ", slope_label
+      ),
+      hjust = 0.5,
+      vjust = 1.5,
+      size = 3.5
+    )
+}
+
+
+
+# daytime
+p <- ggduo(
+  df_13,
+  columnsX = c(
+    "Air temperature (°C)",
+    "Solar radiation (W m⁻²)",
+    "Precipitation (mm)"
+  ),
+  columnsY = c(
+    "Forest LST (°C)",
+    "Open-land LST (°C)",
+    "Forest cooling (°C)"
+  ),
+  mapping = aes(color = period, shape = period),
+  types = list(
+    continuous = cor_panel
+  ),
+  progress = FALSE
+)
+
+# Same y-axis for forest and open_land
+for (i in 1:2) {
+  for (j in 1:3) {
+    p[i, j] <- p[i, j] + coord_cartesian(ylim = c(22.5, 40))
+  }
+}
+
+for (i in 3) {
+  for (j in 1:3) {
+    p[i, j] <- p[i, j] + coord_cartesian(ylim = c(0, 17.5))
+  }
+}
+
+p
+
+# nighttime
+p2 <- ggduo(
+  df_01,
+  columnsX = c(
+    "Air temperature (°C)",
+    "Precipitation (mm)"
+  ),
+  columnsY = c(
+    "Forest LST (°C)",
+    "Open-land LST (°C)",
+    "Forest cooling (°C)"
+  ),
+  mapping = aes(color = period, shape = period),
+  types = list(
+    continuous = cor_panel
+  ),
+  progress = FALSE
+)
+
+# Same y-axis for forest and open_land
+for (i in 1:2) {
+  for (j in 1:2) {
+    p2[i, j] <- p2[i, j] + coord_cartesian(ylim = c(12, 23))
+  }
+}
+
+for (i in 3) {
+  for (j in 1:2) {
+    p2[i, j] <- p2[i, j] + coord_cartesian(ylim = c(0, 11))
+  }
+}
+
+p2
 ```
 
 ## Linear T-air and T-lst

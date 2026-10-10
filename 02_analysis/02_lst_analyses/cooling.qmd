@@ -2,10 +2,10 @@
 title: "cooling"
 format: html
 editor_options: 
-  chunk_output_type: inline
+  chunk_output_type: console
 ---
 
-# Load prerequisites
+# Load prerequisite
 
 ```{r}
 library(dplyr)
@@ -15,6 +15,7 @@ library(here)
 library(ggstatsplot)
 library(ggplot2)
 library(hrbrthemes)
+library(ggh4x)
 
 monthly13_pairs <- read_csv(here("00_data", "processed", "lst_cooling_pairs_monthly_1330.csv"))
 
@@ -40,45 +41,129 @@ hottest_month_tair_13 <- monthly13_pairs |>
   ) |>
   mutate(year = factor(year))
 
+
+```
+
+```{r}
+# test for normality --> no evidence against normal destribution
+years <- c(2021, 2022, 2023, 2024)
+
+for (yr in years) {
+  
+  x <- hottest_month_tair_01 %>%
+    filter(year == yr) %>%
+    pull(cooling)
+  
+  cat("\nYear:", yr, "\n")
+  print(shapiro.test(x))
+}
+
+#check min and max cooling for each year
+hottest_month_tair_01 %>%
+  group_by(year) %>%
+  summarise(
+    min_cooling = round(min(cooling, na.rm = TRUE), 2),
+    max_cooling = round(max(cooling, na.rm = TRUE), 2),
+    mean_cooling = round(mean(cooling, na.rm = TRUE), 2),
+    sd_cooling = round(sd(cooling, na.rm = TRUE), 2)
+  )
+
+hottest_month_tair_01 %>%
+  filter(year %in% c(2021, 2022, 2023)) %>%
+  group_by(year) %>%
+  summarise(
+    min_cooling = min(cooling, na.rm = TRUE),
+    max_cooling = max(cooling, na.rm = TRUE),
+    mean_cooling = mean(cooling, na.rm = TRUE),
+    sd_cooling = sd(cooling, na.rm = TRUE)
+  ) %>%
+  summarise(
+    avg_min = round(mean(min_cooling), 2),
+    avg_max = round(mean(max_cooling), 2),
+    avg_mean = round(mean(mean_cooling), 2),
+    avg_sd = round(mean(sd_cooling), 2)
+  )
+
+
 ```
 
 # Plot Cooling ggbetweenstats
 
 ```{r}
 
+
+
 # plot dif for hottest month Tair
 ggbetweenstats(
   data = hottest_month_tair_13,
   x = year, 
-  y=cooling,
+  y = cooling,
   bf.message = FALSE,
-  results.subtitle = FALSE
-) 
+  results.subtitle = FALSE,
+  pairwise.alpha = 0.0005,
+) +
+  scale_color_manual(values = c(
+    "2021" = "#648D80",
+    "2022" = "#648D80",
+    "2023" = "#648D80",
+    "2024" = "#FF4500"
+  )
+) + scale_y_continuous(
+    breaks = seq(-13,2, by = 2)
+  )+
+  coord_cartesian(ylim = c(2, -14)
+)+
+  labs(
+    x = "Year",
+    y = "Forest cooling (°C)"
+  ) +
+theme_bw()
 
 ggbetweenstats(
   data = hottest_month_tair_01,
   x = year, 
   y=cooling,
   bf.message = FALSE,
-  results.subtitle = FALSE
-) 
-
-# compare forest and open land
-ggbetweenstats(
-  data = hottest_month_tair_13,
-  x = year, 
-  y=forest,
-  bf.message = FALSE,
-  results.subtitle = FALSE
-) 
-
-ggbetweenstats(
-  data = hottest_month_tair_13,
-  x = year, 
-  y=open_land,
-  bf.message = FALSE,
-  results.subtitle = FALSE
-) 
+  results.subtitle = FALSE,
+  pairwise.alpha = 0.0005
+  # point.args = list(
+  #   size = 2.5,
+  #   alpha = 0.4,
+  #   position = ggplot2::position_jitter(width = 0.14, height = 0)
+  # )
+) +
+  scale_color_manual(values = c(
+    "2021" = "#648D80",
+    "2022" = "#648D80",
+    "2023" = "#648D80",
+    "2024" = "#FF4500"
+  )
+)+ scale_y_continuous(
+    breaks = seq(-13,2, by = 2)
+  )+
+  coord_cartesian(ylim = c(2, -14)
+) +
+  labs(
+    x = "Year",
+    y = "Forest cooling (°C)"
+  ) + 
+  theme_bw()
+# # compare forest and open land
+# ggbetweenstats(
+#   data = hottest_month_tair_13,
+#   x = year, 
+#   y=forest,
+#   bf.message = FALSE,
+#   results.subtitle = FALSE
+# ) 
+# 
+# ggbetweenstats(
+#   data = hottest_month_tair_13,
+#   x = year, 
+#   y=open_land,
+#   bf.message = FALSE,
+#   results.subtitle = FALSE
+# ) 
 ```
 
 # Statistics
@@ -244,8 +329,10 @@ plot_cooling_vs_elevation <- function(df, method = "lm") {
       paste(toupper(method), "model")
     )
   }
+  
+  # Change here Y to forest, open_land or cooling depending on your needs
 
-  p <- ggplot(df, aes(x = elv_mean, y = cooling)) +
+  p <- ggplot(df, aes(x = elv_mean, y = open_land)) +
     geom_point() +
     geom_smooth(
       method = smooth_method,
@@ -254,10 +341,10 @@ plot_cooling_vs_elevation <- function(df, method = "lm") {
       fill = "#69b3a2",
       se = TRUE
     ) +
-  scale_y_continuous(
-    limits = c(-2, 14),
-    breaks = seq(-2, 14, by = 2)
-  ) +
+  # scale_y_continuous( # ----------------> scale for cooling
+  #   limits = c(-2, 14),
+  #   breaks = seq(-2, 14, by = 2)
+  # ) +
     labs(
       x = "Elevation (m)",
       y = "Forest Cooling (°C)",
@@ -294,4 +381,282 @@ plot_cooling_vs_elevation(hottest_month_tair_13, "gam")
 # 
 # # GAM (if desired)
 # plot_cooling_vs_elevation(hottest_month_tair_01, "gam")
+```
+
+New elevation correlations plots
+
+```{r}
+
+
+df <- hottest_month_tair_01
+# --------------------------------------------------
+# 1. Prepare and reshape the data
+# --------------------------------------------------
+
+df_13 <- df |>
+  dplyr::rename(
+    `Elevation (m)` = elv_mean,
+    `Forest LST (°C)` = forest,
+    `Open-land LST (°C)` = open_land,
+    `Forest cooling (°C)` = cooling
+  ) |>
+  pivot_longer(
+    cols = c(
+      `Forest LST (°C)`,
+      `Open-land LST (°C)`,
+      `Forest cooling (°C)`
+    ),
+    names_to = "response",
+    values_to = "value"
+  )
+
+# Optional: make sure years appear in the correct order
+df_13$year <- factor(
+  df_13$year,
+  levels = c(2021, 2022, 2023, 2024)
+)
+
+# Optional: control row order
+df_13$response <- factor(
+  df_13$response,
+  levels = c(
+    "Forest LST (°C)",
+    "Open-land LST (°C)",
+    "Forest cooling (°C)"
+  )
+)
+
+# --------------------------------------------------
+# 2. Calculate correlation and regression statistics
+# --------------------------------------------------
+
+stats_13 <- df_13 |>
+  group_by(year, response) |>
+  summarise(
+    r = cor(
+      `Elevation (m)`,
+      value,
+      use = "complete.obs"
+    ),
+
+    b = coef(
+      lm(value ~ `Elevation (m)`)
+    )[2],
+    RSE = sigma(
+      lm(value ~ `Elevation (m)`)
+    ),
+    .groups = "drop"
+  )
+
+# --------------------------------------------------
+# 3. Format labels for each panel
+# --------------------------------------------------
+
+stats_13 <- stats_13 |>
+  mutate(
+    label = paste0(
+      "r = ", sprintf("%.2f", r),
+      "; b = ", sprintf("%.3f", b),
+      "\nRSE = ", sprintf("%.2f", RSE)
+    )
+  )
+
+# Check the statistics
+stats_13
+
+# --------------------------------------------------
+# 4. Create the figure
+# --------------------------------------------------
+
+p13 <- ggplot(
+  df_13,
+  aes(
+    x = `Elevation (m)`,
+    y = value
+  )
+) +
+
+  # Points
+  geom_point(
+    size = 1.5,
+    alpha = 0.9
+  ) +
+
+  
+geom_smooth(
+  method = "loess",
+  se = FALSE,
+  linewidth = 0.8,
+    color = "darkgrey"
+) +
+  
+# One linear regression per panel
+geom_smooth(
+  method = "lm",
+  se = FALSE,
+  linewidth = 0.8
+) +
+
+# Add r, slope and RSE
+geom_text(
+  data = stats_13,
+  aes(
+    x = Inf,
+    y = Inf,
+    label = label
+  ),
+  inherit.aes = FALSE,
+  hjust = 1.1,
+  vjust = 1.3,
+  size = 3.2
+) +
+
+# Rows = response variables
+# Columns = years
+facet_grid(
+  response ~ year,
+  scales = "free_y"
+) +
+
+############### FOR DAYTIME###################
+# ggh4x::facetted_pos_scales(
+#   y = list(
+#     response == "Forest LST (°C)" ~ scale_y_continuous(limits = c(20, 55)),
+#     response == "Open-land LST (°C)" ~ scale_y_continuous(limits = c(20, 55)),
+#     response == "Forest cooling (°C)" ~ scale_y_continuous(limits = c(-5, 20))
+#   )
+# ) +
+############### FOR NIGHTTIME###################
+ggh4x::facetted_pos_scales(
+  y = list(
+    response == "Forest LST (°C)" ~ scale_y_continuous(limits = c(5, 35)),
+    response == "Open-land LST (°C)" ~ scale_y_continuous(limits = c(5, 35)),
+    response == "Forest cooling (°C)" ~ scale_y_continuous(limits = c(-5, 20))
+  )
+) +
+  labs(
+    x = "Elevation (m)",
+    y = NULL
+  ) +
+
+ theme_gray()
+
+  # theme(
+  #   strip.background = element_blank(),
+  #   strip.text = element_text(
+  #     size = 10
+  #   ),
+  #   axis.title.x = element_text(
+  #     size = 11
+  #   ),
+  #   axis.text = element_text(
+  #     size = 9
+  #   )
+  # )
+
+# Show figure
+p13
+```
+
+```{r}
+# Check local minimum and local maximum for each year
+turning_points <- hottest_month_tair_01 %>%
+  filter(year %in% c(2021, 2022, 2023, 2024)) %>%
+  group_by(year) %>%
+  group_modify(~ get_loess_turning_points(.x)) %>%
+  ungroup()
+
+turning_points
+
+# Fit LOESS
+loess_mod <- loess(cooling ~ elv_mean, data = hottest_month_tair_01)
+loess_mod
+
+# Plot observations
+plot(
+  hottest_month_tair_01$elv_mean,
+  hottest_month_tair_01$cooling,
+  xlab = "Elevation (m)",
+  ylab = "Forest cooling (°C)",
+  pch = 16
+)
+
+# Create elevation sequence
+x <- seq(
+  min(hottest_month_tair_01$elv_mean, na.rm = TRUE),
+  max(hottest_month_tair_01$elv_mean, na.rm = TRUE),
+  length.out = 500
+)
+
+# Predict from LOESS
+y <- predict(
+  loess_mod,
+  newdata = data.frame(elv_mean = x)
+)
+
+# Add fitted curve
+lines(x, y, lwd = 2)
+
+```
+
+```{r}
+library(dplyr)
+library(purrr)
+library(tidyr)
+
+get_loess_turning_points <- function(df) {
+
+  mod <- loess(cooling ~ elv_mean, data = df)
+
+  elev_grid <- seq(
+    min(df$elv_mean, na.rm = TRUE),
+    max(df$elv_mean, na.rm = TRUE),
+    length.out = 1000
+  )
+
+  pred <- predict(
+    mod,
+    newdata = data.frame(elv_mean = elev_grid)
+  )
+
+  # Remove any NA predictions
+  tmp <- data.frame(
+    elv_mean = elev_grid,
+    cooling_fit = pred
+  ) %>%
+    filter(!is.na(cooling_fit))
+
+  # Change in sign of the fitted slope
+  slope_sign <- sign(diff(tmp$cooling_fit))
+  turning <- diff(slope_sign)
+
+  max_idx <- which(turning < 0) + 1
+  min_idx <- which(turning > 0) + 1
+
+  bind_rows(
+    data.frame(
+      type = "local_maximum",
+      elv_mean = tmp$elv_mean[max_idx],
+      fitted_cooling = tmp$cooling_fit[max_idx]
+    ),
+    data.frame(
+      type = "local_minimum",
+      elv_mean = tmp$elv_mean[min_idx],
+      fitted_cooling = tmp$cooling_fit[min_idx]
+    )
+  )
+}
+
+turning_points <- hottest_month_tair_01 %>%
+  filter(year %in% c(2021, 2022, 2023, 2024)) %>%
+  group_by(year) %>%
+  group_modify(~ get_loess_turning_points(.x)) %>%
+  ungroup() 
+
+turning_points |>
+  arrange(type,elv_mean) |>
+  group_by(type)|>
+  summarize(
+    mean_fitted_cooling = round(mean(fitted_cooling),2)
+  )
 ```

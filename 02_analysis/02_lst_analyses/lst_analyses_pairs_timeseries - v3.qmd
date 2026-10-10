@@ -18,15 +18,14 @@ source(here("01_functions", "functions.R"))
 
 # Raw LST data cleaning and visualization
 
-## Calculation
+## Single pair example
 
 ```{r}
-# # Read into a tiblle
-# csv <- read_csv(here("04_output", "pairs_timeseries_results.csv"))
-# 
-# # Clean the raw data
-# df <- clean_lst_data(csv)
-# df
+# Read into a tiblle
+df <- clean_lst_data(here("00_data", "raw", "pairs_timeseries_results_0130.csv")) |>
+filter(poly_id == 37)
+
+df
 
 ```
 
@@ -39,8 +38,8 @@ source(here("01_functions", "functions.R"))
 
 ```{r}
 # Plot the timeseries
-p <- plot_raw (df, "0-1800")
-p
+# p <- plot_raw(df, "0-1800")
+# p
 
 # Save the plots
 # Map(ggsave,
@@ -50,6 +49,34 @@ p
   #   height = 150,
   #   units = "mm"
   # )
+
+ggplot(df, aes(x = date, y = lst, color = landcover)
+  ) +
+    # geom_point(alpha = 0.4) +            # optional: show the raw points
+    geom_jitter(size = 1, alpha = 0.35) +
+    geom_smooth(method = "loess",        # "loess" for local smoothing
+                span = 0.15,              # adjust smoothness (0-1)
+                se = FALSE,
+                fill = "#4e4f52",
+                linewidth = 0.9) +               # display confidence interval
+    scale_colour_manual(
+      values = c("darkgreen", "sienna2")
+    ) +
+    scale_y_continuous(limits = c(5, 30), breaks = seq(5, 35, by = 5)
+    ) +
+    scale_x_date( date_breaks = "1 year",
+    date_minor_breaks = "1 month",
+    date_labels = "%Y")+
+    # scale_y_continuous(limits = c(5, 40), breaks = seq(5, 40, by = 5))+
+    annotate("rect", xmin = as.Date("2023-07-01"), xmax = as.Date("2024-03-01"), ymin = -Inf, ymax = Inf, alpha = .2
+    ) +
+    annotate("text", x = as.Date("2023-12-01"), y = 30, label = "El Niño"
+    ) +
+    labs(
+      x = "Date", 
+      y = "LST (°C)"
+    ) +
+    theme_bw()
 ```
 
 ```{r}
@@ -59,7 +86,7 @@ ggplot(df, aes(x = date, y = lst, color = landcover)
     # geom_point(alpha = 0.4) +            # optional: show the raw points
     geom_jitter(size = 0.3, alpha = 0.25) +
     geom_smooth(method = "loess",        # "loess" for local smoothing
-                span = 0.1,              # adjust smoothness (0-1)
+                span = 0.2,              # adjust smoothness (0-1)
                 se = FALSE,
                 fill = "#4e4f52",
                 linewidth = 0.9) +               # display confidence interval
@@ -82,8 +109,6 @@ ggplot(df, aes(x = date, y = lst, color = landcover)
     facet_wrap(~landcover) +
     theme_classic()
 ```
-
-### 
 
 ```{r}
 # Facet grids for each separate polygon
@@ -134,7 +159,26 @@ plot_facet<- function (df, elev_range) {
 
 ## Calculation
 
-`{# {r} # # apply function monthly_lst() to get the monthly value for each point # monthly <- monthly_lst(df) # monthly #  # # Save the monthly table for fast reuse # write_csv(monthly, here("04_output", "monthly_lst.csv")) #  # # print the hottest months for open land according to the lst data # hottest_months <- monthly |> #   filter(landcover == "open_land") |> #   group_by(year) |> #   slice_max(lst_monthly_mean, n = 1, with_ties = FALSE) |> #   ungroup() #  # hottest_months # # # results # # landcover  year month lst_monthly_mean n_points month_date # # open_land  2021     4             19.5     1216 2021-04-01 # # open_land  2022     3             20.1     1280 2022-03-01 # # open_land  2023     4             21.0     1226 2023-04-01 # # open_land  2024     4             22.3     1216 2024-04-01 #`
+```{r}
+# apply function monthly_lst() to get the monthly value for each point
+monthly <- monthly_lst(df)
+monthly
+ # # Save the monthly table for fast reuse
+write_csv(monthly, here("04_output", "monthly_lst.csv"))
+ # # print the hottest months for open land according to the lst data
+hottest_months <- monthly |>
+  filter(landcover == "open_land") |>
+  group_by(year) |>
+  slice_max(lst_monthly_mean, n = 1, with_ties = FALSE) |>
+  ungroup()
+ # hottest_months
+# # results
+# landcover  year month lst_monthly_mean n_points month_date
+# open_land  2021     4             19.5     1216 2021-04-01
+# open_land  2022     3             20.1     1280 2022-03-01
+# open_land  2023     4             21.0     1226 2023-04-01
+# open_land  2024     4             22.3     1216 2024-04-01 #
+```
 
 ## Plot monthly
 

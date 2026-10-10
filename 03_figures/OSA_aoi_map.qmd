@@ -1,6 +1,8 @@
 ---
 title: "OSA_aoi_map"
 format: html
+editor_options: 
+  chunk_output_type: inline
 ---
 
 ```{r}
@@ -20,14 +22,22 @@ library(here)
 aoi <- vect(here("00_data", "processed", "Amistosa_climate_hub_32617.shp"))
 
 # landcover
-ldc <- rast(here("00_data", "data_selection", "landcover_10_2023_32617.tif"))
+ldc <- rast(here("00_data", "old_data", "data_selection", "landcover_10_2023_32617.tif"))
 
 # elevation
-elv <- rast(here("00_data", "data_selection", "elevation_30_32617.tif")) |>
+elv <- rast(here("00_data", "old_data", "data_selection", "elevation_30_32617.tif")) |>
   mask(aoi)
 
+# Load example image for lst from 6th May 2023
+lst <- rast(here("00_data", "vis_layers", "LST_hot_day_06_05_2023.tiff"))|>
+  mask(aoi)
+
+lst <- (lst/100) - 273.15
+
+lst[lst < 0] <- NA
+
 # paired points locations
-pairs_poly <- vect(here("00_data", "data_selection", "plots_poly_32617.shp")) |>
+pairs_poly <- vect(here("00_data", "old_data", "data_selection", "plots_poly_32617.shp")) |>
   centroids()
 
 # climate data pixels extent
@@ -54,7 +64,7 @@ ldc <- classify(ldc, rcl)
 
 levels(ldc) <- data.frame(
   ID = c(10, 11, 13, 30, 50, 80, 95),
-  landcover = c("Forests", "Palm plantations", "Pineapple", "Open land", "Build-up", "Water and wetlands", "Mangrooves")
+  landcover = c("Forests", "Palm plantations", "Pineapple", "Open land", "Build-up", "Water and wetlands", "Mangroves")
   )
 
 ```
@@ -176,7 +186,7 @@ tm_shape(ldc)+
       "Build-up" = "#f62024",
       "Palm plantations" = "#c80094",
       "Pineapple" = "#f4b084",
-      "Mangrooves" = "#00f4c6"),
+      "Mangroves" = "#00f4c6"),
     title = "Land cover")+
   tmap_options(bbox = st_bbox(bb_expanded)) +
 tm_shape(aoi) +
@@ -184,18 +194,23 @@ tm_shape(aoi) +
 tm_shape(pairs_poly) +
   tm_dots(col = "type",
           col.legend = tm_legend(title = "")) +
-  tm_graticules(alpha = 0.0, n.x = 4, n.y = 4, labels.col = 'white') +
+tm_graticules(alpha = 0.0, n.x = 4, n.y = 4, labels.col = 'white') +
   # tm_scalebar(breaks = c(0, 15, 30))+
-  tm_layout(
-   legend.position = tm_pos_in("0.73", "0.38"),
-   # scalebar.position = tm_pos_in("0.73", "0.08"),
-   legend.text.size = 0.5, 
-   legend.title.size = 0.5,
+tm_compass(
+  type = "arrow",
+  position = tm_pos_in("right", "center"),
+  size = 2
+) +
+tm_layout(
+ legend.position = tm_pos_in("0.73", "0.38"),
+ # scalebar.position = tm_pos_in("0.73", "0.08"),
+ legend.text.size = 0.5, 
+ legend.title.size = 0.5,
           fontfamily = "Arial") +
-  tm_shape(countries) +
-  tm_dots(alpha = 0) +
-  tm_text("label", size = 0.8, fontfamily = "Arial") +
-  tm_credits(
+tm_shape(countries) +
+tm_dots(alpha = 0) +
+tm_text("label", size = 0.8, fontfamily = "Arial") +
+ tm_credits(
     text = "b",
     position = c("LEFT", "TOP"),
     size = 2.0,
@@ -204,8 +219,46 @@ tm_shape(pairs_poly) +
   )
 
 #----------------------------------
-# tmap_arrange(elv, lulc)
-
+# lst
+tm_shape(lst)+
+  tm_raster(
+    col.scale = tm_scale_continuous(
+      values = viridisLite::magma(256),
+      limits = c(10, 50)
+    ),
+    col.legend = tm_legend(
+      title = "LST (°C)"
+    ))+
+tmap_options(bbox = st_bbox(bb_expanded)) +
+tm_shape(aoi) +
+  tm_borders() +
+tm_shape(pairs_poly) +
+  tm_dots(col = "type",
+          col.legend = tm_legend(title = "")) +
+# tm_graticules(alpha = 0.0, n.x = 4, n.y = 4, labels.col = 'white') +
+#   # tm_scalebar(breaks = c(0, 15, 30))+
+# tm_compass(
+#   type = "arrow",
+#   position = tm_pos_in("right", "center"),
+#   size = 2
+# ) +
+tm_layout(
+  frame = FALSE,
+ legend.position = tm_pos_in("0.77", "0.47"),
+ # scalebar.position = tm_pos_in("0.73", "0.08"),
+ legend.text.size = 0.5, 
+ legend.title.size = 0.5,
+          fontfamily = "Arial") +
+# tm_shape(countries) +
+# tm_dots(alpha = 0) +
+# tm_text("label", size = 0.8, fontfamily = "Arial") +
+ tm_credits(
+    text = "c",
+    position = c("LEFT", "TOP"),
+    size = 2.5,
+    fontfamily = "Arial",
+    fontface = "bold"
+  )
 
 
 ```

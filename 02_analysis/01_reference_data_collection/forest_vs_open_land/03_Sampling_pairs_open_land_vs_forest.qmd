@@ -2,7 +2,7 @@
 title: "lst_elevation_low_veg_vs_forest"
 format: html
 editor_options: 
-  chunk_output_type: inline
+  chunk_output_type: console
 ---
 
 # Select pairs (points) of nearby low vegetation and forest pixels at different elevation gradients
@@ -22,7 +22,7 @@ Load proccessed data (with same CRS and extent)
 
 ```{r}
 # area of interest (aoi)
-aoi <- vect(here("00_data", "raw", "Amistosa_climate_hub_32617.shp"))
+aoi <- vect(here("00_data", "processed", "Amistosa_climate_hub_32617.shp"))
 
 # landcover map
 ldc <- rast(here("00_data", "processed", "landcover_10_2023_32617.tif"))

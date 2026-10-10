@@ -57,7 +57,7 @@ cooling <- function(df) {
     unused_fn = list(elv = mean)
   ) |>
   mutate(
-    cooling = open_land - forest, #NOTE! cooling is usealy expressed in negative terms as fores - open land. Here we calculate it in positive terms as this helps in the following analyses and stat tests 
+    cooling = forest - open_land, 
     lst_mean = (open_land + forest) /2,
     elv_mean = elv
   ) |>

@@ -1,9 +1,20 @@
+## 
+[] Change pairs locations to pairs plots
+[] Planet Statistical API code clean and push
+
 ## for next time
-[] run stats for one-side hypothesis and write them in the table
+[] !IMPORTANT large files cannot be uploaded to github
+    File 00_data/raw/8_Amostosa_landcover_YN.tif is 123.89 MB; this exceeds GitHub's file size limit of 100.00 MB
+    [] check automatic download from zotero?
+
+
+## 07.08.2026
+[x] run stats for one-side hypothesis and write them in the table
 [] clean lst analyses code, too many unused cells
     [x] or create a new workbook for forest cooling only
-[] run multiplle regression with the new data
-[] check stat for forest and open land (H is that forest will have no difference, while open land will have)
+[x] run multiplle regression with the new data
+[x] check stat for forest and open land (H is that forest will have no difference, while open land will have)
+    yes there is difference both in forests and in opne land
  
 ## 27.06.2026
 [x] cooling df

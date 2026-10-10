@@ -270,14 +270,17 @@ write_csv(monthly_tp, here("00_data","processed", "monthly_total_precip.csv"), a
 Surface solar radiation downwards (J m^-2^ ) - Amount of solar radiation (also known as shortwave radiation) reaching the surface of the Earth.
 
 ```{r}
+# daytime
 mask <- rast(here("00_data", "vis_layers", "aoi_mask_era5.tif"))
-plot(mask)
+
 r <- rast(here("00_data", "99_temp", "era5_solar_radiation_1900UTC_1330solar.nc"))
 r <- project(r, "EPSG:32617", method = "near") 
   # remove pixels outside the aoi, using the precreated mask
 r <- r*mask
 
 plot(r[[1]])
+plot(mask)
+
 names(r)
 time(r)
 
@@ -317,7 +320,7 @@ ssrd
 #!!!! Note ssrd values seem waj too big for an hour. Check later, nevertheless the relationship is linear, so the pattern should still show on
 
 # Save the monthly table for fast reuse
-write_csv(ssrd, here("00_data","processed", "ssrd_1330_solar_time.csv"), append = FALSE)
+# write_csv(ssrd, here("00_data","processed", "ssrd_1330_solar_time.csv"), append = FALSE)
 ```
 
 ## LST data
