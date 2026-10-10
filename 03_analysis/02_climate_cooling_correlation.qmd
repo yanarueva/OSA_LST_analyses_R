@@ -2,7 +2,7 @@
 title: "pairs_timeseries"
 format: html
 editor_options: 
-  chunk_output_type: inline
+  chunk_output_type: console
 ---
 
 source("functions.R")
@@ -26,7 +26,6 @@ library(ggpmisc)
 
 ```{r}
 # Read into a tiblle
-
 csv <- read_csv(here("00_data", "raw", "roni.csv"))
 
 colnames(csv)
@@ -73,10 +72,6 @@ roni_05 <- roni |>
 
 # Climate data
 
-ssrd2 \<- read_csv(here("00_data","processed", "ssrd_0130_solar_time.csv"))
-
-ssrd2
-
 ```{r}
 # ERA 5 Tair at 2m at 13:30 and 01:30 solar time
 temp <- read_csv(here("00_data","processed", "t2m_1330_0130_solar_time.csv"))
@@ -95,16 +90,17 @@ ssrd
 # LST data
 
 ```{r}
-monthly_lst_13 <- read_csv(here("00_data", "processed", "lst_cooling_monthly_mean_1330.csv"))
+monthly_lst <- read_csv(
+  here("00_data", "processed", "lst_cooling_monthly_mean.csv"),
+  col_types = cols(
+  solar_time = col_character(),
+  .default = col_guess()
+  ))
 
-monthly_lst_13$month_date <- as.Date(monthly_lst_13$month_date, format = "%m/%d/%Y")
+monthly_lst$month_date <- as.Date(monthly_lst$month_date, format = "%m/%d/%Y")
 
-monthly_lst_01 <- read_csv(here("00_data", "processed", "lst_cooling_monthly_mean_0130.csv"))
+monthly_lst
 
-monthly_lst_01$month_date <- as.Date(monthly_lst_01$month_date, format = "%m/%d/%Y")
-
-monthly_lst_13
-monthly_lst_01
 ```
 
 # Join RONI and Climate data and LST
@@ -113,13 +109,11 @@ monthly_lst_01
 # join with the roni table
 full <- roni |>
   full_join(temp, by = "date") |>
-  full_join(monthly_lst_13, by = join_by("date" == "month_date")) |>
-  full_join(monthly_lst_01, by = join_by("date" == "month_date")) |>
+  full_join(monthly_lst, by = join_by("date" == "month_date")) |>
   full_join(precip, by = "date") |>
   full_join(ssrd, by = "date")
 
-full <- full |>
-  select(!c("year.x","month.x","n_points.x","year.y","month.y","n_points.y"))
+full
 
 write_csv(full, here("04_output", "lst_and_climate_var_monthly_mean.csv"))
 ```
@@ -128,24 +122,31 @@ write_csv(full, here("04_output", "lst_and_climate_var_monthly_mean.csv"))
 
 ```{r}
 
-full <- read_csv(here("04_output", "lst_and_climate_var_monthly_mean.csv"))
+full <- read_csv(
+  here("04_output", "lst_and_climate_var_monthly_mean.csv"),
+  col_types = cols(
+  solar_time = col_character(),
+  .default = col_guess()
+  ))
 
 # First restructure the data
 df_long <- full |>
+  filter(solar_time == "13:30") |>
   # select(c(precipitation_mm, roni, ssrd_Wm2_1330, t1330, lst_mean, cooling)) |>
   pivot_longer(
     # cols = c(precipitation_mm, roni, ssrd_Wm2_1330, t1330, lst_mean, cooling),
-    cols = c(precipitation_mm, roni, ssrd_Wm2_1330, t1330, lst_mean_1330, cooling_1330),
+    cols = c(precipitation_mm, roni, ssrd_Wm2_1330, t1330, lst_mean, cooling),
     names_to = "variable",
     values_to = "value"
   )
+
 df_long
 
 # Factor the variables, to define the order they will appear in the plot
 df_long$variable <- factor(
   df_long$variable,
   # levels = c("precipitation_mm", "roni", "ssrd_Wm2_1330", "t1330", "lst_mean", "cooling")
-  levels = c("precipitation_mm", "roni", "ssrd_Wm2_1330", "t1330", "lst_mean_1330", "cooling_1330")
+  levels = c("precipitation_mm", "roni", "ssrd_Wm2_1330", "t1330", "lst_mean", "cooling")
 )
 
 # Change the names for the plot
@@ -154,10 +155,10 @@ df_long$variable <- dplyr::recode(df_long$variable,
                            t1330 = "Air Temperature (°C)", #at 01:30 local solar time
                            roni = "Relative Oceanic Niño Index (°C)",
                            precipitation_mm = "Precipitation (mm)",
-                           lst_mean_1330 = "Land Surface Temperature (°C)", #at 13:30 local solar time
+                           lst_mean = "Land Surface Temperature (°C)", #at 13:30 local solar time
                            ssrd_Wm2_1330 = "Downward short-wave solar radiation (W m⁻²)", #at 13:30 local solar time
                         
-                           cooling_1330 = "Forest-induced cooling (°C)")
+                           cooling = "Forest-induced cooling (°C)")
 
 
 # Then plot with facet wrap
@@ -168,6 +169,8 @@ ggplot(df_long, aes(date, value)) +
     date_labels = "%b %Y",
     date_breaks = "3 months",
     date_minor_breaks = "1 month"
+    ) +
+    annotate("rect", xmin = as.Date("2023-07-01"), xmax = as.Date("2024-03-01"), ymin = -Inf, ymax = Inf, alpha = .2
     ) +
     theme(axis.text.x=element_text(angle=45, hjust=1)) +
   facet_wrap(~ variable, scales = "free_y", ncol = 1)
