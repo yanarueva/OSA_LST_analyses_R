@@ -1,0 +1,329 @@
+---
+title: "pairs_timeseries"
+format: html
+editor_options: 
+  chunk_output_type: console
+---
+
+source("functions.R")
+
+```{r}
+library(lubridate)
+library(tidyverse)
+library(terra)
+library(dplyr)
+library(here)
+source(here("01_functions","functions.R"))
+
+# for correlation analyses
+library(car)
+library(GGally)
+library(ggplot2)
+library(ggpmisc)
+```
+
+# RONI index
+
+```{r}
+# Read into a tiblle
+csv <- read_csv(here("00_data", "raw", "roni.csv"))
+
+colnames(csv)
+
+roni <- csv |>
+  rename(
+    date = 1,
+    roni = 2
+  ) |>
+  mutate(
+    date = as.Date(date),
+    roni = na_if(roni, -9999)
+  )|> 
+  filter(
+    date >= as.Date("2020-10-01"), 
+    date < as.Date("2024-11-01")
+  )
+  
+
+roni
+
+ggplot(roni, aes(date,roni))+
+  geom_point() +
+  scale_x_date(
+    date_labels = "%b %Y",
+    date_breaks = "3 months",
+    date_minor_breaks = "1 month"
+    ) + 
+    annotate("rect", xmin = as.Date("2023-07-01"), xmax = as.Date("2024-02-01"), ymin = -Inf, ymax = Inf,         alpha = .2
+    ) +
+    annotate("text", x = as.Date("2024-07-01"), y = 1.5, label = "El Niño"
+    ) +
+    labs(
+      x = "Date", 
+      y = "Relative Oceanic Niño Index (°C)") +
+    theme(axis.text.x=element_text(angle=45, hjust=1)) 
+  
+
+#----------------------------------
+# filter rone above 0.5
+roni_05 <- roni |>
+  filter(roni >=0.5)
+```
+
+# Climate data
+
+```{r}
+# ERA 5 Tair at 2m at 13:30 and 01:30 solar time
+temp <- read_csv(here("00_data","processed", "t2m_1330_0130_solar_time.csv"))
+temp
+
+# Total Precipitation - monthly mean
+precip <- read_csv(here("00_data","processed", "monthly_total_precip.csv"))
+precip
+
+# Surface short-wave (solar) radiation downwards at 13:30 solar time (ssrd taken for the hour before)
+ssrd <- read_csv(here("00_data","processed", "ssrd_1330_solar_time.csv"))
+ssrd
+
+```
+
+# LST data
+
+```{r}
+monthly_lst <- read_csv(
+  here("03_results", "lst_cooling_monthly_mean.csv"),
+  col_types = cols(
+  solar_time = col_character(),
+  .default = col_guess()
+  ))
+
+monthly_lst$month_date <- as.Date(monthly_lst$month_date, format = "%m/%d/%Y")
+
+monthly_lst
+
+```
+
+# Join RONI and Climate data and LST
+
+```{r}
+# join with the roni table
+full <- roni |>
+  full_join(temp, by = "date") |>
+  full_join(monthly_lst, by = join_by("date" == "month_date")) |>
+  full_join(precip, by = "date") |>
+  full_join(ssrd, by = "date")
+
+full <- full |> mutate(
+  # add temperature in a single column corresponding to the solar time
+  air_temp_2m = case_when(
+    solar_time == "13:30" ~ t1330,
+    solar_time == "01:30" ~ t0130,
+    TRUE ~ NA_real_
+  ),
+  # remove incoming solar radiation for nightime data
+  ssrd_Wm2_1330 = if_else(
+      solar_time == "01:30",
+      NA_real_,
+      ssrd_Wm2_1330
+    ),
+  ssrd_Jm2_1330 = if_else(
+      solar_time == "01:30",
+      NA_real_,
+      ssrd_Wm2_1330
+    )
+) |>
+  rename(lst_forest = forest,
+         lst_open_land = open_land) |>
+  select(!c(t1330,t0130))
+
+full
+
+write_csv(
+  full, 
+  here("03_results", "lst_and_climate_var_monthly_mean.csv")
+  )
+```
+
+## Plot join
+
+```{r}
+
+full <- read_csv(
+  here("03_results", "lst_and_climate_var_monthly_mean.csv"),
+  col_types = cols(
+  solar_time = col_character(),
+  .default = col_guess()
+  ))
+
+full
+
+# -------------
+# First restructure the data
+df_long <- full |>
+  # select(c(precipitation_mm, roni, ssrd_Wm2_1330, t1330, lst_mean, cooling)) |>
+  pivot_longer(
+    # cols = c(precipitation_mm, roni, ssrd_Wm2_1330, t1330, lst_mean, cooling),
+    cols = c(precipitation_mm, roni, ssrd_Wm2_1330, air_temp_2m, lst_mean, cooling),
+    names_to = "variable",
+    values_to = "value"
+  )|>
+  select(c(date, year, month, solar_time, variable, value))
+
+df_long
+
+# --------------------
+# Factor the variables, to define the order they will appear in the plot
+df_long$variable <- factor(
+  df_long$variable,
+  # levels = c("precipitation_mm", "roni", "ssrd_Wm2_1330", "t1330", "lst_mean", "cooling")
+  levels = c("precipitation_mm", "roni", "ssrd_Wm2_1330", "air_temp_2m", "lst_mean", "cooling")
+)
+
+# Change the names for the plot
+df_long$variable <- dplyr::recode(df_long$variable,
+                           # t1330 = "Air Temperature (°C)", #at 13:30 local solar time
+                           air_temp_2m = "Air Temperature (°C)", #at 01:30 local solar time
+                           roni = "Relative Oceanic Niño Index (°C)",
+                           precipitation_mm = "Precipitation (mm)",
+                           lst_mean = "Land Surface Temperature (°C)", #at 13:30 local solar time
+                           ssrd_Wm2_1330 = "Downward short-wave solar radiation (W m⁻²)", #at 13:30 local solar time
+                        
+                           cooling = "Forest-induced cooling (°C)")
+
+
+# Then plot with facet wrap
+ggplot(df_long |> filter(solar_time == "13:30"), aes(date, value)) +
+  geom_point() +
+  geom_line() +
+  scale_x_date(
+    date_labels = "%b %Y",
+    date_breaks = "3 months",
+    date_minor_breaks = "1 month"
+    ) +
+    annotate("rect", xmin = as.Date("2023-07-01"), xmax = as.Date("2024-03-01"), ymin = -Inf, ymax = Inf, alpha = .2
+    ) +
+    theme(axis.text.x=element_text(angle=45, hjust=1)) +
+  facet_wrap(~ variable, scales = "free_y", ncol = 1)
+```
+
+## Corellation
+
+```{r}
+# df <- read_csv(here("03_results", "lst_and_climate_var_monthly_mean.csv"))
+# df
+# 
+# df |> pivot_longer(
+#   cols = c(air_temp_2m, ssrd_Wm2_1330, precipitation_mm ),
+#   names_to = "variable",
+#   values_to = "value"
+# ) |>
+#   ggplot(aes(
+#     x = value, 
+#     y = cooling,
+# 
+#   )) +
+#   geom_point(alpha = 0.5) +
+#   geom_smooth(
+#     method = "lm"
+#     ) +
+#   facet_wrap(
+#     solar_time ~ variable,
+#     scales = "free_x",
+#     ncol = 4
+#   ) +
+#   labs(
+#     x = NULL,
+#     y = "Forest cooling (°C)"
+#   ) +
+#   theme_bw()
+
+```
+
+```{r}
+df <- read_csv(
+  here("03_results", "lst_and_climate_var_monthly_mean.csv"),
+  col_types = cols(
+  solar_time = col_character(),
+  .default = col_guess()
+  ))
+
+
+# Create a group variable
+df$period <- ifelse(df$date >= "2023-03-01" & df$date <= "2024-04-30",
+                    "El Niño period",
+                    "Other months") |>
+
+# Column labels
+variable_labels <- c(
+  "air_temp_2m" = "Air temperature (°C)",
+  "precipitation_mm" = "Precipitation (mm)",
+  "ssrd_Wm2_1330" = "Solar radiation (W/m²)"
+)
+
+# Row labels
+time_labels <- c(
+  "13:30" = "Daytime",
+  "01:30" = "Nighttime"
+)
+
+# -------------------------
+df |>
+  pivot_longer(
+    cols = c(air_temp_2m, precipitation_mm, ssrd_Wm2_1330),
+    names_to = "variable",
+    values_to = "value"
+  ) |>
+  mutate(
+    solar_time = factor(solar_time, levels = c("13:30", "01:30"))
+  ) |>
+  ggplot(aes(
+    x = value,
+    y = cooling
+  )) +
+  geom_point(aes(color = period),alpha = 0.4) +
+  scale_color_manual(
+    values = c(
+      "El Niño period" = "#FF4500",
+      "Other months" = "#365F53"
+    )
+  )+
+  geom_smooth(
+    color = "grey40",
+    method = "lm",
+    se = TRUE,
+    level = 0.95,
+    alpha = 0.15
+  ) +
+  facet_grid(
+    rows = vars(solar_time),
+    cols = vars(variable),
+    scales = "free_x",
+    labeller = labeller(
+      variable = as_labeller(variable_labels),
+      solar_time = as_labeller(time_labels)
+   ))+
+    stat_poly_eq(
+      formula = y ~ x,
+      aes(label = paste(
+        after_stat(rr.label),
+        after_stat(eq.label),
+        sep = "\n"
+      )),
+      output.type = "text",
+      parse = FALSE,
+      label.x = 0.05,
+      label.y = 0.05,
+      hjust = 0,
+      vjust = 0,
+      size = 3
+    ) +
+  labs(
+    x = NULL,
+    y = "Forest cooling (°C)",
+    color = "Period"
+  ) +
+  theme_bw()
+# -------------------------------------
+
+
+```

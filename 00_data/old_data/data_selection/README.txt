@@ -1,2 +1,0 @@
-extent_90W_10Nv1_4_2021.tif  -----> Global Surface Water, maximum water extent, https://global-surface-water.appspot.com/download
-elevation_30_32617.tif -----------> elevation 30m downloaded from GEE and reprojected with terra in R

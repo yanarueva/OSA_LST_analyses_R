@@ -4,7 +4,7 @@
 
 ## for next time
 [] !IMPORTANT large files cannot be uploaded to github
-    File 00_data/raw/8_Amostosa_landcover_YN.tif is 123.89 MB; this exceeds GitHub's file size limit of 100.00 MB
+    File data/raw/8_Amostosa_landcover_YN.tif is 123.89 MB; this exceeds GitHub's file size limit of 100.00 MB
     [] check automatic download from zotero?
 
 

@@ -5,4 +5,4 @@
 
 # Large raster data
 *.tif
-00_data/raw/
+data/raw/
